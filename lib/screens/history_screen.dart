@@ -30,6 +30,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void initState() {
     super.initState();
     _reload();
+    widget.services.entriesRevision.addListener(_onEntriesChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.services.entriesRevision.removeListener(_onEntriesChanged);
+    super.dispose();
+  }
+
+  void _onEntriesChanged() {
+    if (!mounted) return;
+    setState(_reload);
   }
 
   void _reload() {
@@ -58,6 +70,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (ok != true) return;
     try {
       await widget.services.entries.deleteEntry(entry.id);
+      widget.services.notifyEntriesChanged();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Registro removido')),
@@ -81,6 +94,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (updated == null) return;
     try {
       await widget.services.entries.updateEntry(updated);
+      widget.services.notifyEntriesChanged();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Registro atualizado')),

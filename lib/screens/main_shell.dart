@@ -38,7 +38,12 @@ class _MainShellState extends State<MainShell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
+        onDestinationSelected: (value) {
+          setState(() => _index = value);
+          if (value == 1) {
+            widget.services.notifyEntriesChanged();
+          }
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.water_drop_outlined),

@@ -28,6 +28,13 @@ class AppServices {
   final EntryService entries;
   final InsulinService insulin;
   final SpeechService speech;
+
+  /// Bumped whenever entries are created/updated/deleted so History reloads.
+  final ValueNotifier<int> entriesRevision = ValueNotifier<int>(0);
+
+  void notifyEntriesChanged() {
+    entriesRevision.value++;
+  }
 }
 
 class DiabetesApp extends StatelessWidget {

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
+import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/services/brazil_time.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
@@ -31,23 +32,18 @@ class _HomeScreenState extends State<HomeScreen> {
   final _glucoseController = TextEditingController();
   final _foodController = TextEditingController();
   final _carbsController = TextEditingController();
-  final _appliedController = TextEditingController();
   final _picker = ImagePicker();
   final _iobService = const IobService();
 
   Uint8List? _photoBytes;
   String? _photoName;
-  InsulinRecommendation? _recommendation;
   IobSnapshot _iob = IobSnapshot.empty;
   bool _useAi = true;
   bool _calculating = false;
-  bool _saving = false;
   bool _loadingIob = true;
   bool _listening = false;
   bool _transcribing = false;
   String? _error;
-  String? _pendingImagePath;
-  String? _pendingEntryId;
 
   @override
   void initState() {
@@ -63,7 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _glucoseController.dispose();
     _foodController.dispose();
     _carbsController.dispose();
-    _appliedController.dispose();
     super.dispose();
   }
 
@@ -89,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
     );
-    setState(() => _recommendation = null);
+    setState(() {});
   }
 
   Future<void> _toggleFoodSpeech() async {
@@ -179,8 +174,15 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _photoBytes = bytes;
       _photoName = file.name;
-      _recommendation = null;
     });
+  }
+
+  void _clearForm() {
+    _glucoseController.clear();
+    _foodController.clear();
+    _carbsController.clear();
+    _photoBytes = null;
+    _photoName = null;
   }
 
   Future<void> _calculate() async {
@@ -207,23 +209,18 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _calculating = true;
       _error = null;
-      _recommendation = null;
     });
 
     try {
       await _refreshIob();
       final entryId = const Uuid().v4();
-      _pendingEntryId = entryId;
-      _pendingImagePath = null;
-      String? imageUrl;
+      String? imagePath;
 
       if (_photoBytes != null) {
-        final path = await widget.services.entries.uploadFoodPhoto(
+        imagePath = await widget.services.entries.uploadFoodPhoto(
           entryId: entryId,
           bytes: _photoBytes!,
         );
-        imageUrl = await widget.services.entries.createSignedUrl(path);
-        _pendingImagePath = path;
       }
 
       final glucose = int.parse(_glucoseController.text.trim());
@@ -231,6 +228,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (_useAi) {
         final brNow = BrazilTime.now();
+        final imageUrl = imagePath == null
+            ? null
+            : await widget.services.entries.createSignedUrl(imagePath);
         result = await widget.services.insulin.recommendWithAi(
           glucoseMgdl: glucose,
           localTime: BrazilTime.formatHm(brNow),
@@ -255,72 +255,36 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
 
-      setState(() {
-        _recommendation = result;
-        _appliedController.text = formatWhole(result.insulinaRecomendadaU);
-        if (!_useAi) {
-          _carbsController.text = formatWhole(result.carboidratosG);
-        }
-      });
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _calculating = false);
-    }
-  }
-
-  Future<void> _save() async {
-    if (_recommendation == null) {
-      setState(() => _error = 'Calcule a insulina antes de salvar.');
-      return;
-    }
-    final applied = double.tryParse(
-      _appliedController.text.trim().replaceAll(',', '.'),
-    );
-    if (applied == null) {
-      setState(() => _error = 'Informe a insulina aplicada.');
-      return;
-    }
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
-    try {
-      await widget.services.entries.saveEntry(
-        entryId: _pendingEntryId,
-        glucoseMgdl: int.parse(_glucoseController.text.trim()),
+      final entry = await widget.services.entries.saveEntry(
+        entryId: entryId,
+        glucoseMgdl: glucose,
         recordedAt: DateTime.now(),
-        foodText: _foodController.text.trim().isEmpty
-            ? null
-            : _foodController.text.trim(),
-        foodImagePath: _pendingImagePath,
-        recommendedInsulin: _recommendation!.insulinaRecomendadaU,
-        appliedInsulin: applied,
-        gptRawResponse: _recommendation!.raw,
+        foodText: foodText.isEmpty ? null : foodText,
+        foodImagePath: imagePath,
+        recommendedInsulin: result.insulinaRecomendadaU,
+        appliedInsulin: result.insulinaRecomendadaU,
+        gptRawResponse: result.raw,
       );
+      widget.services.notifyEntriesChanged();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Registro salvo')),
-      );
-      setState(() {
-        _glucoseController.clear();
-        _foodController.clear();
-        _carbsController.clear();
-        _appliedController.clear();
-        _photoBytes = null;
-        _photoName = null;
-        _recommendation = null;
-        _pendingImagePath = null;
-        _pendingEntryId = null;
-      });
+      setState(_clearForm);
       await _refreshIob();
+      if (!mounted) return;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => DoseResultScreen(
+            services: widget.services,
+            entry: entry,
+            recommendation: result,
+          ),
+        ),
+      );
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _calculating = false);
     }
   }
 
@@ -418,8 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           if (n == null || n <= 0) return 'Valor inválido';
                           return null;
                         },
-                        onChanged: (_) =>
-                            setState(() => _recommendation = null),
+                        onChanged: (_) => setState(() {}),
                       ),
                       const Text(
                         'mg/dL',
@@ -435,7 +398,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           SectionCard(
             title: 'Alimentação',
             icon: Icons.restaurant_outlined,
@@ -447,19 +410,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     ButtonSegment(
                       value: true,
                       label: Text('Estimar com IA'),
-                      icon: Icon(Icons.auto_awesome, size: 16),
+                      icon: Icon(Icons.auto_awesome, size: 18),
                     ),
                     ButtonSegment(
                       value: false,
                       label: Text('Carbs manuais'),
-                      icon: Icon(Icons.calculate_outlined, size: 16),
+                      icon: Icon(Icons.edit_note_outlined, size: 18),
                     ),
                   ],
                   selected: {_useAi},
                   onSelectionChanged: (values) {
                     setState(() {
                       _useAi = values.first;
-                      _recommendation = null;
                       _error = null;
                     });
                   },
@@ -477,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       alignLabelWithHint: true,
                       suffixIcon: _foodMicButton(),
                     ),
-                    onChanged: (_) => setState(() => _recommendation = null),
+                    onChanged: (_) => setState(() {}),
                   ),
                   if (_listening || _transcribing)
                     Padding(
@@ -536,7 +498,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                   setState(() {
                                     _photoBytes = null;
                                     _photoName = null;
-                                    _recommendation = null;
                                   });
                                 },
                                 icon: const Icon(
@@ -582,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           : 'Ex: almoço',
                       suffixIcon: _foodMicButton(),
                     ),
-                    onChanged: (_) => setState(() => _recommendation = null),
+                    onChanged: (_) => setState(() {}),
                   ),
                   if (_listening || _transcribing)
                     Padding(
@@ -608,7 +569,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       labelText: 'Carboidratos (g)',
                       prefixIcon: Icon(Icons.grain),
                     ),
-                    onChanged: (_) => setState(() => _recommendation = null),
+                    onChanged: (_) => setState(() {}),
                   ),
                 ],
               ],
@@ -635,144 +596,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       : 'Calcular com fórmula'),
             ),
           ),
-          if (_recommendation != null) ...[
-            const SizedBox(height: 16),
-            SectionCard(
-              title: 'Insulina recomendada',
-              icon: Icons.medication_outlined,
-              iconColor: AppColors.primary,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: formatWhole(
-                              _recommendation!.insulinaRecomendadaU,
-                            ),
-                            style: const TextStyle(
-                              fontSize: 52,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary,
-                              height: 1,
-                            ),
-                          ),
-                          const TextSpan(
-                            text: ' U',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      _recommendation!.source == 'manual'
-                          ? 'Cálculo local (fórmula)'
-                          : 'Carbs TACO (IA) + fórmula',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  if (_recommendation!.metaDisplay != null) ...[
-                    const SizedBox(height: 6),
-                    Center(
-                      child: Text(
-                        _recommendation!.horarioBr != null
-                            ? '${_recommendation!.metaDisplay!} · ${_recommendation!.horarioBr} (Brasília)'
-                            : _recommendation!.metaDisplay!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.primaryDark,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      _MetricChip(
-                        label: 'Carbs',
-                        value: '${formatWhole(_recommendation!.carboidratosG)} g',
-                      ),
-                      const SizedBox(width: 8),
-                      _MetricChip(
-                        label: 'Correção',
-                        value: '${formatWhole(_recommendation!.correcaoU)} U',
-                      ),
-                      const SizedBox(width: 8),
-                      _MetricChip(
-                        label: 'Comida',
-                        value: '${formatWhole(_recommendation!.bolusComidaU)} U',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _MetricChip(
-                        label: 'IOB',
-                        value: '${formatWhole(_recommendation!.iobU)} U',
-                      ),
-                    ],
-                  ),
-                  if (_recommendation!.observacao != null &&
-                      _recommendation!.observacao!.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _recommendation!.observacao!,
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _appliedController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                    ],
-                    decoration: const InputDecoration(
-                      labelText: 'Insulina aplicada (U)',
-                      helperText: 'Ajuste para mais ou menos se necessário',
-                      prefixIcon: Icon(Icons.edit_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryDark,
-                    ),
-                    onPressed: _saving ? null : _save,
-                    child: _saving
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Salvar registro'),
-                  ),
-                ],
-              ),
-            ),
-          ],
           if (_error != null) ...[
             const SizedBox(height: 14),
             Text(
@@ -789,47 +612,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Nova dose')),
       body: body,
-    );
-  }
-}
-
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.muted,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.ink,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
