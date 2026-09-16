@@ -95,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         size: 120,
                         showTitle: true,
                         titleSize: 32,
-                        subtitle: 'Controle de glicose e insulina',
+                        subtitle: 'Glicose e estimativa de dose',
                       ),
                       const SizedBox(height: 28),
                       SectionCard(

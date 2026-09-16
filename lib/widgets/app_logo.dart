@@ -33,7 +33,7 @@ class AppLogo extends StatelessWidget {
         if (showTitle) ...[
           SizedBox(height: size * 0.12),
           Text(
-            'Diabetes',
+            'GlicoDose',
             style: TextStyle(
               fontSize: titleSize,
               fontWeight: FontWeight.w800,

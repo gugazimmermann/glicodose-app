@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -11,6 +13,7 @@ import 'package:diabetes_app/screens/profile_screen.dart';
 import 'package:diabetes_app/services/auth_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
+import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
@@ -21,13 +24,16 @@ class AppServices {
         profile = ProfileService(client),
         entries = EntryService(client),
         insulin = InsulinService(client),
-        speech = SpeechService(client);
+        speech = SpeechService(client) {
+    iobBadge = IobBadgeService(entries: entries, profile: profile);
+  }
 
   final AuthService auth;
   final ProfileService profile;
   final EntryService entries;
   final InsulinService insulin;
   final SpeechService speech;
+  late final IobBadgeService iobBadge;
 
   /// Bumped whenever entries are created/updated/deleted so History reloads.
   final ValueNotifier<int> entriesRevision = ValueNotifier<int>(0);
@@ -45,15 +51,99 @@ class AppServices {
   }
 }
 
-class DiabetesApp extends StatelessWidget {
+class DiabetesApp extends StatefulWidget {
   const DiabetesApp({super.key, required this.services});
 
   final AppServices services;
 
   @override
+  State<DiabetesApp> createState() => _DiabetesAppState();
+}
+
+class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
+  StreamSubscription<AuthState>? _authSub;
+  Timer? _badgeTimer;
+  bool _loggedIn = false;
+
+  AppServices get services => widget.services;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    services.entriesRevision.addListener(_onEntriesChanged);
+    _loggedIn = services.auth.currentSession != null;
+    _authSub = services.auth.authStateChanges.listen(_onAuthState);
+    if (_loggedIn) {
+      _onLoggedIn();
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _stopBadgeTimer();
+    services.entriesRevision.removeListener(_onEntriesChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _onAuthState(AuthState state) {
+    final loggedIn = state.session != null;
+    if (loggedIn == _loggedIn) return;
+    _loggedIn = loggedIn;
+    if (loggedIn) {
+      _onLoggedIn();
+    } else {
+      _onLoggedOut();
+    }
+  }
+
+  void _onLoggedIn() {
+    unawaited(services.iobBadge.ensureNotificationPermission());
+    unawaited(services.iobBadge.refresh());
+    _startBadgeTimer();
+  }
+
+  void _onLoggedOut() {
+    _stopBadgeTimer();
+    unawaited(services.iobBadge.clear());
+  }
+
+  void _onEntriesChanged() {
+    if (!_loggedIn) return;
+    unawaited(services.iobBadge.refresh());
+  }
+
+  void _startBadgeTimer() {
+    _stopBadgeTimer();
+    _badgeTimer = Timer.periodic(const Duration(minutes: 15), (_) {
+      if (_loggedIn) {
+        unawaited(services.iobBadge.refresh());
+      }
+    });
+  }
+
+  void _stopBadgeTimer() {
+    _badgeTimer?.cancel();
+    _badgeTimer = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _loggedIn) {
+      unawaited(services.iobBadge.refresh());
+      _startBadgeTimer();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _stopBadgeTimer();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Diabetes',
+      title: 'GlicoDose',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       home: AuthGate(services: services),
