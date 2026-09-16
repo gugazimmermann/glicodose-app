@@ -72,7 +72,5 @@
 	<string>Precisamos da galeria para selecionar a foto do alimento ou rótulo.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Precisamos do microfone para descrever o alimento por voz.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Precisamos do reconhecimento de fala para transformar sua descrição em texto.</string>
 </dict>
 </plist>

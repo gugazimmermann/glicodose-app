@@ -1,6 +1,6 @@
 # Diabetes App (Flutter + Supabase)
 
-App híbrido Android/iOS para registro de glicose, alimentação (texto/foto) e estimativa de insulina rápida com base no perfil do usuário e ChatGPT (via Edge Function).
+App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou voz) e estimativa de insulina rápida com base no perfil do usuário e ChatGPT (via Edge Function).
 
 > **Aviso:** a recomendação é estimativa e **não substitui orientação médica**.
 
@@ -9,26 +9,34 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto/foto) e 
 - Flutter SDK
 - Projeto no [Supabase](https://supabase.com)
 - Chave da [OpenAI](https://platform.openai.com)
-- CLI do Supabase (opcional, para deploy da função)
+- CLI do Supabase (para deploy das funções)
 
 ## 1. Banco e Storage
 
-No SQL Editor do Supabase, execute:
+No SQL Editor do Supabase, execute na ordem:
 
-[`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql)
+1. [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql)
+2. [`supabase/migrations/002_r0_iob.sql`](supabase/migrations/002_r0_iob.sql)
+3. [`supabase/migrations/003_prescription_profile.sql`](supabase/migrations/003_prescription_profile.sql)
 
-Isso cria `profiles`, `entries`, RLS, bucket `food-photos` e trigger de perfil no signup.
+Isso cria `profiles`, `entries`, RLS, bucket `food-photos`, IOB e campos de prescrição (meta dia/noite).
 
-## 2. Edge Function
+## 2. Edge Functions
 
 ```bash
 supabase login
 supabase link --project-ref SEU_PROJECT_REF
 supabase secrets set OPENAI_API_KEY=sk-sua-chave
 supabase functions deploy recommend-insulin
+supabase functions deploy transcribe-food
 ```
 
-A função lê o perfil do usuário autenticado e chama GPT-4o (com Vision se houver foto).
+| Função | Papel |
+| --- | --- |
+| `recommend-insulin` | Estima carboidratos (GPT-4o + TACO / Vision) e aplica a fórmula do perfil − IOB |
+| `transcribe-food` | Converte áudio do botão **Falar** em texto (Whisper, `language: pt`) |
+
+As duas usam o mesmo secret `OPENAI_API_KEY` e exigem usuário autenticado (`verify_jwt = true`).
 
 ## 3. Variáveis de ambiente (`.env`)
 
@@ -69,13 +77,28 @@ flutter run \
   --dart-define=SUPABASE_ANON_KEY=eyJhbGciOi...
 ```
 
+### Dispositivo físico (USB)
+
+```bash
+flutter devices
+flutter run -d <device_id> --dart-define-from-file=.env
+```
+
+Na primeira gravação por voz, o Android/iOS pedirá permissão de **microfone**.
+
 ## Fluxo do usuário
 
 1. Cadastro / login (Supabase Auth)
-2. Preencher perfil uma vez: glicose alvo, FSI, razão I:C, insulina rápida, passo de dose
-3. Na tela principal: glicose + alimentação (texto e/ou foto) → **Calcular insulina**
+2. Preencher perfil uma vez: tipo de diabetes, meta dia/noite, FSI, razão I:C, insulina rápida, passo de dose
+3. Na tela principal: glicose + alimentação (texto, foto e/ou **Falar**) → **Calcular insulina**
 4. Ajustar **Insulina aplicada** se quiser → **Salvar**
 5. Consultar **Histórico**
+
+### Botão Falar
+
+1. Toque no microfone no campo de alimentação → grava
+2. Toque de novo → para, envia o áudio para `transcribe-food` (Whisper) e preenche o texto
+3. Não depende do reconhecimento de voz nativo do Android (SpeechRecognizer)
 
 ## Roadmap
 
@@ -127,16 +150,24 @@ supabase functions deploy recommend-insulin
 
 No app, preencha o perfil (ex.: I:C 25, FSI 150, meta 110 / noite 120).
 
+### Entrada por voz (Whisper)
+
+```bash
+supabase functions deploy transcribe-food
+```
+
+No app: microfone no campo de alimento → grava → Whisper → texto.
+
 ## Estrutura
 
 ```
 lib/
   config/          # URL e anon key
   models/          # Profile, Entry
-  services/        # Auth, Profile, Entry, Insulin
+  services/        # Auth, Profile, Entry, Insulin, Speech
   screens/         # Login, Profile, Home, History
   widgets/
 supabase/
   migrations/      # SQL
-  functions/       # recommend-insulin
+  functions/       # recommend-insulin, transcribe-food
 ```

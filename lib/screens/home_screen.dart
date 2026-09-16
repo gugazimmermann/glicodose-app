@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:diabetes_app/app.dart';
@@ -35,7 +34,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final _appliedController = TextEditingController();
   final _picker = ImagePicker();
   final _iobService = const IobService();
-  final _speech = SpeechToText();
 
   Uint8List? _photoBytes;
   String? _photoName;
@@ -45,9 +43,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _calculating = false;
   bool _saving = false;
   bool _loadingIob = true;
-  bool _speechReady = false;
   bool _listening = false;
-  String _speechBase = '';
+  bool _transcribing = false;
   String? _error;
   String? _pendingImagePath;
   String? _pendingEntryId;
@@ -61,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     if (_listening) {
-      _speech.stop();
+      widget.services.speech.cancelRecording();
     }
     _glucoseController.dispose();
     _foodController.dispose();
@@ -70,53 +67,23 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<bool> _ensureSpeechReady() async {
-    if (_speechReady) return true;
-    final available = await _speech.initialize(
-      onStatus: (status) {
-        if (!mounted) return;
-        final listening = status == SpeechToText.listeningStatus;
-        if (_listening != listening) {
-          setState(() => _listening = listening);
-        }
-      },
-      onError: (error) {
-        if (!mounted) return;
-        setState(() {
-          _listening = false;
-          _error = 'Não foi possível ouvir. Tente novamente.';
-        });
-      },
+  void _reportSpeechIssue(String message) {
+    if (!mounted) return;
+    setState(() {
+      _listening = false;
+      _transcribing = false;
+      _error = message;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
-    if (!mounted) return false;
-    setState(() => _speechReady = available);
-    if (!available) {
-      setState(() => _error = 'Reconhecimento de voz indisponível neste aparelho.');
-    }
-    return available;
-  }
-
-  Future<String?> _resolveSpeechLocale() async {
-    final locales = await _speech.locales();
-    for (final preferred in ['pt_BR', 'pt_PT', 'pt']) {
-      for (final locale in locales) {
-        final normalized = locale.localeId.replaceAll('-', '_');
-        if (locale.localeId == preferred || normalized == preferred) {
-          return locale.localeId;
-        }
-      }
-    }
-    for (final locale in locales) {
-      final id = locale.localeId.toLowerCase();
-      if (id.startsWith('pt')) return locale.localeId;
-    }
-    return null;
   }
 
   void _applySpeechWords(String words) {
+    if (!mounted) return;
     final spoken = words.trim();
     if (spoken.isEmpty) return;
-    final base = _speechBase.trim();
+    final base = _foodController.text.trim();
     final text = base.isEmpty ? spoken : '$base $spoken';
     _foodController.value = TextEditingValue(
       text: text,
@@ -126,39 +93,58 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _toggleFoodSpeech() async {
+    if (_transcribing) return;
+
     if (_listening) {
-      await _speech.stop();
-      if (mounted) setState(() => _listening = false);
+      setState(() {
+        _listening = false;
+        _transcribing = true;
+        _error = null;
+      });
+      try {
+        final text = await widget.services.speech.stopAndTranscribe();
+        if (!mounted) return;
+        _applySpeechWords(text);
+        setState(() => _transcribing = false);
+      } catch (e) {
+        _reportSpeechIssue(
+          e.toString().replaceFirst(RegExp(r'^Exception:\s*'), ''),
+        );
+      }
       return;
     }
 
     setState(() => _error = null);
-    final ready = await _ensureSpeechReady();
-    if (!ready || !mounted) return;
-
-    _speechBase = _foodController.text;
-    final localeId = await _resolveSpeechLocale();
-    if (!mounted) return;
-    setState(() => _listening = true);
-    await _speech.listen(
-      onResult: (result) => _applySpeechWords(result.recognizedWords),
-      listenOptions: SpeechListenOptions(
-        listenMode: ListenMode.dictation,
-        cancelOnError: true,
-        partialResults: true,
-        localeId: localeId,
-      ),
-    );
+    try {
+      await widget.services.speech.startRecording();
+      if (!mounted) return;
+      setState(() => _listening = true);
+    } catch (e) {
+      _reportSpeechIssue(
+        e.toString().replaceFirst(RegExp(r'^Exception:\s*'), ''),
+      );
+    }
   }
 
   Widget _foodMicButton() {
+    final active = _listening || _transcribing;
     return IconButton(
-      tooltip: _listening ? 'Parar' : 'Falar',
-      onPressed: _toggleFoodSpeech,
-      icon: Icon(
-        _listening ? Icons.mic : Icons.mic_none_outlined,
-        color: _listening ? AppColors.accent : AppColors.muted,
-      ),
+      tooltip: _transcribing
+          ? 'Transcrevendo…'
+          : _listening
+              ? 'Parar'
+              : 'Falar',
+      onPressed: _transcribing ? null : _toggleFoodSpeech,
+      icon: _transcribing
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(
+              active ? Icons.mic : Icons.mic_none_outlined,
+              color: active ? AppColors.accent : AppColors.muted,
+            ),
     );
   }
 
@@ -485,20 +471,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     minLines: 2,
                     maxLines: 4,
                     decoration: InputDecoration(
-                      hintText: _listening
-                          ? 'Ouvindo...'
+                      hintText: (_listening || _transcribing)
+                          ? (_transcribing ? 'Transcrevendo…' : 'Ouvindo...')
                           : 'Ex: 2 pães franceses com queijo',
                       alignLabelWithHint: true,
                       suffixIcon: _foodMicButton(),
                     ),
                     onChanged: (_) => setState(() => _recommendation = null),
                   ),
-                  if (_listening)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
+                  if (_listening || _transcribing)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        'Ouvindo… toque no microfone para parar',
-                        style: TextStyle(
+                        _transcribing
+                            ? 'Transcrevendo o áudio…'
+                            : 'Ouvindo… toque no microfone para parar',
+                        style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.muted,
                         ),
@@ -589,17 +577,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     controller: _foodController,
                     decoration: InputDecoration(
                       labelText: 'Descrição (opcional)',
-                      hintText: _listening ? 'Ouvindo...' : 'Ex: almoço',
+                      hintText: (_listening || _transcribing)
+                          ? (_transcribing ? 'Transcrevendo…' : 'Ouvindo...')
+                          : 'Ex: almoço',
                       suffixIcon: _foodMicButton(),
                     ),
                     onChanged: (_) => setState(() => _recommendation = null),
                   ),
-                  if (_listening)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
+                  if (_listening || _transcribing)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        'Ouvindo… toque no microfone para parar',
-                        style: TextStyle(
+                        _transcribing
+                            ? 'Transcrevendo o áudio…'
+                            : 'Ouvindo… toque no microfone para parar',
+                        style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.muted,
                         ),

@@ -3,3 +3,6 @@
 
 [functions.recommend-insulin]
 verify_jwt = true
+
+[functions.transcribe-food]
+verify_jwt = true

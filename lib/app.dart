@@ -12,6 +12,7 @@ import 'package:diabetes_app/services/auth_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
+import 'package:diabetes_app/services/speech_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 
 class AppServices {
@@ -19,12 +20,14 @@ class AppServices {
       : auth = AuthService(client),
         profile = ProfileService(client),
         entries = EntryService(client),
-        insulin = InsulinService(client);
+        insulin = InsulinService(client),
+        speech = SpeechService(client);
 
   final AuthService auth;
   final ProfileService profile;
   final EntryService entries;
   final InsulinService insulin;
+  final SpeechService speech;
 }
 
 class DiabetesApp extends StatelessWidget {
