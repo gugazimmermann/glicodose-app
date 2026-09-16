@@ -1,0 +1,5 @@
+# A sample Deno configuration for Supabase Edge Functions.
+# https://supabase.com/docs/guides/functions
+
+[functions.recommend-insulin]
+verify_jwt = true

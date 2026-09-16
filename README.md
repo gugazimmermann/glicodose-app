@@ -1,0 +1,142 @@
+# Diabetes App (Flutter + Supabase)
+
+App híbrido Android/iOS para registro de glicose, alimentação (texto/foto) e estimativa de insulina rápida com base no perfil do usuário e ChatGPT (via Edge Function).
+
+> **Aviso:** a recomendação é estimativa e **não substitui orientação médica**.
+
+## Pré-requisitos
+
+- Flutter SDK
+- Projeto no [Supabase](https://supabase.com)
+- Chave da [OpenAI](https://platform.openai.com)
+- CLI do Supabase (opcional, para deploy da função)
+
+## 1. Banco e Storage
+
+No SQL Editor do Supabase, execute:
+
+[`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql)
+
+Isso cria `profiles`, `entries`, RLS, bucket `food-photos` e trigger de perfil no signup.
+
+## 2. Edge Function
+
+```bash
+supabase login
+supabase link --project-ref SEU_PROJECT_REF
+supabase secrets set OPENAI_API_KEY=sk-sua-chave
+supabase functions deploy recommend-insulin
+```
+
+A função lê o perfil do usuário autenticado e chama GPT-4o (com Vision se houver foto).
+
+## 3. Variáveis de ambiente (`.env`)
+
+1. Copie o exemplo e preencha:
+
+```bash
+cp .env.example .env
+```
+
+2. Edite o `.env` (valores em Supabase → **Project Settings → API**):
+
+```env
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOi...
+```
+
+3. Rode passando o arquivo:
+
+```bash
+flutter pub get
+flutter run --dart-define-from-file=.env
+```
+
+**Importante**
+
+- O `.env` **não** deve ir para o git (já está no `.gitignore`).
+- **Não** coloque `OPENAI_API_KEY` no `.env` do app — a chave fica só no Supabase:
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-sua-chave
+```
+
+Alternativa sem arquivo:
+
+```bash
+flutter run \
+  --dart-define=SUPABASE_URL=https://xxxx.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=eyJhbGciOi...
+```
+
+## Fluxo do usuário
+
+1. Cadastro / login (Supabase Auth)
+2. Preencher perfil uma vez: glicose alvo, FSI, razão I:C, insulina rápida, passo de dose
+3. Na tela principal: glicose + alimentação (texto e/ou foto) → **Calcular insulina**
+4. Ajustar **Insulina aplicada** se quiser → **Salvar**
+5. Consultar **Histórico**
+
+## Roadmap
+
+Sugestões de produto e releases: ver [`docs/releases/`](docs/releases/).
+
+- Decisão atual: **R0 — IOB / segurança** → [`docs/releases/R0-decision.md`](docs/releases/R0-decision.md)
+- Spec + tickets: [`docs/releases/R0-iob-spec.md`](docs/releases/R0-iob-spec.md)
+
+### R0 — o que foi implementado
+
+Após o MVP, rode a migration extra no SQL Editor:
+
+[`supabase/migrations/002_r0_iob.sql`](supabase/migrations/002_r0_iob.sql)
+
+Redeploy da função (IOB + clamp no servidor):
+
+```bash
+supabase functions deploy recommend-insulin
+```
+
+Inclui: duração da insulina no perfil, banner de IOB na dose, desconto de IOB na recomendação, editar/excluir no histórico, aceite de disclaimer na 1ª vez.
+
+### R1 — cálculo híbrido
+
+Spec: [`docs/releases/R1-hybrid-spec.md`](docs/releases/R1-hybrid-spec.md)
+
+- IA estima **só carboidratos**; dose = fórmula do perfil − IOB
+- Modo **Carbs manuais** (sem OpenAI) na tela Dose
+- Redeploy da mesma Edge Function após o R1:
+
+```bash
+supabase functions deploy recommend-insulin
+```
+
+### Prescrição médica (meta dia/noite + TACO)
+
+Migration:
+
+[`supabase/migrations/003_prescription_profile.sql`](supabase/migrations/003_prescription_profile.sql)
+
+- Tipo de diabetes, meta dia/noite, janela (default 20:00–05:59)
+- Horário oficial **America/Sao_Paulo**
+- IA usa referência **TACO** para carbs
+
+```bash
+# SQL Editor: rode 003_prescription_profile.sql
+supabase functions deploy recommend-insulin
+```
+
+No app, preencha o perfil (ex.: I:C 25, FSI 150, meta 110 / noite 120).
+
+## Estrutura
+
+```
+lib/
+  config/          # URL e anon key
+  models/          # Profile, Entry
+  services/        # Auth, Profile, Entry, Insulin
+  screens/         # Login, Profile, Home, History
+  widgets/
+supabase/
+  migrations/      # SQL
+  functions/       # recommend-insulin
+```
