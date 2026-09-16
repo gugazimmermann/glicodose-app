@@ -9,7 +9,9 @@ import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/services/brazil_time.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
+import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
+import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/disclaimer_banner.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 
@@ -43,7 +45,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loadingIob = true;
   bool _listening = false;
   bool _transcribing = false;
+  bool _iobFailed = false;
   String? _error;
+  String? _glucoseWarning;
 
   @override
   void initState() {
@@ -102,9 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _applySpeechWords(text);
         setState(() => _transcribing = false);
       } catch (e) {
-        _reportSpeechIssue(
-          e.toString().replaceFirst(RegExp(r'^Exception:\s*'), ''),
-        );
+        _reportSpeechIssue(userFacingError(e));
       }
       return;
     }
@@ -115,36 +117,41 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() => _listening = true);
     } catch (e) {
-      _reportSpeechIssue(
-        e.toString().replaceFirst(RegExp(r'^Exception:\s*'), ''),
-      );
+      _reportSpeechIssue(userFacingError(e));
     }
   }
 
   Widget _foodMicButton() {
     final active = _listening || _transcribing;
-    return IconButton(
-      tooltip: _transcribing
-          ? 'Transcrevendo…'
-          : _listening
-              ? 'Parar'
-              : 'Falar',
-      onPressed: _transcribing ? null : _toggleFoodSpeech,
-      icon: _transcribing
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(
-              active ? Icons.mic : Icons.mic_none_outlined,
-              color: active ? AppColors.accent : AppColors.muted,
-            ),
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton(
+        tooltip: _transcribing
+            ? 'Transcrevendo…'
+            : _listening
+                ? 'Parar'
+                : 'Falar',
+        onPressed: _transcribing ? null : _toggleFoodSpeech,
+        icon: _transcribing
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                active ? Icons.mic : Icons.mic_none_outlined,
+                color: active ? AppColors.accent : AppColors.muted,
+              ),
+      ),
     );
   }
 
   Future<void> _refreshIob() async {
-    setState(() => _loadingIob = true);
+    setState(() {
+      _loadingIob = true;
+      _iobFailed = false;
+    });
     try {
       const duration = 4.0;
       final since =
@@ -155,12 +162,62 @@ class _HomeScreenState extends State<HomeScreen> {
         durationHours: duration,
         now: DateTime.now(),
       );
-      if (mounted) setState(() => _iob = snap);
+      if (mounted) {
+        setState(() {
+          _iob = snap;
+          _iobFailed = false;
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() => _iob = IobSnapshot.empty);
+      if (mounted) {
+        setState(() {
+          _iob = IobSnapshot.empty;
+          _iobFailed = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => _loadingIob = false);
     }
+  }
+
+  void _updateGlucoseWarning(String? raw) {
+    final n = int.tryParse(raw?.trim() ?? '');
+    String? warning;
+    if (n != null) {
+      if (n > 0 && n < 70) {
+        warning = 'Glicose baixa (< 70). Considere tratar hipoglicemia antes do bolus.';
+      } else if (n > 300) {
+        warning = 'Glicose muito alta (> 300). Confira a leitura e siga sua orientação médica.';
+      }
+    }
+    if (warning != _glucoseWarning) {
+      setState(() => _glucoseWarning = warning);
+    }
+  }
+
+  Future<bool> _confirmExtremeGlucoseIfNeeded(int glucose) async {
+    if (glucose >= 70 && glucose <= 300) return true;
+    final message = glucose < 70
+        ? 'Glicose $glucose mg/dL está baixa. Deseja calcular mesmo assim?'
+        : 'Glicose $glucose mg/dL está muito alta. Deseja calcular mesmo assim?';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar glicose'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -197,14 +254,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (!_useAi) {
-      final carbs = double.tryParse(
-        _carbsController.text.trim().replaceAll(',', '.'),
-      );
+      final carbs = parseDecimal(_carbsController.text);
       if (carbs == null || carbs < 0) {
         setState(() => _error = 'Informe os carboidratos em gramas.');
         return;
       }
     }
+
+    final glucose = int.parse(_glucoseController.text.trim());
+    if (!await _confirmExtremeGlucoseIfNeeded(glucose)) return;
+    if (!mounted) return;
 
     setState(() {
       _calculating = true;
@@ -223,7 +282,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
 
-      final glucose = int.parse(_glucoseController.text.trim());
       late final InsulinRecommendation result;
 
       if (_useAi) {
@@ -244,9 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (profile == null || !profile.isComplete) {
           throw Exception('Perfil incompleto. Atualize sua prescrição.');
         }
-        final carbs = double.parse(
-          _carbsController.text.trim().replaceAll(',', '.'),
-        );
+        final carbs = parseDecimal(_carbsController.text)!;
         result = widget.services.insulin.calculateManual(
           glucoseMgdl: glucose,
           carboidratosG: carbs,
@@ -255,6 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
 
+      // Persist recommendation only — applied stays null until user confirms.
       final entry = await widget.services.entries.saveEntry(
         entryId: entryId,
         glucoseMgdl: glucose,
@@ -262,18 +319,15 @@ class _HomeScreenState extends State<HomeScreen> {
         foodText: foodText.isEmpty ? null : foodText,
         foodImagePath: imagePath,
         recommendedInsulin: result.insulinaRecomendadaU,
-        appliedInsulin: result.insulinaRecomendadaU,
+        appliedInsulin: null,
         gptRawResponse: result.raw,
       );
       widget.services.notifyEntriesChanged();
 
       if (!mounted) return;
-      setState(_clearForm);
-      await _refreshIob();
-      if (!mounted) return;
 
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+      final done = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
           builder: (_) => DoseResultScreen(
             services: widget.services,
             entry: entry,
@@ -281,8 +335,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
+
+      if (!mounted) return;
+      if (done == true) {
+        setState(_clearForm);
+        await _refreshIob();
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) setState(() => _calculating = false);
     }
@@ -295,13 +355,11 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
-          const DisclaimerBanner(),
-          const SizedBox(height: 12),
           if (!_loadingIob && _iob.iobU > 0)
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF4E5),
+                color: AppColors.warningSoft,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFFFCC80)),
               ),
@@ -309,7 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Icon(Icons.warning_amber_rounded,
-                      color: Color(0xFFE65100)),
+                      color: AppColors.warning),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -326,6 +384,37 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           if (!_loadingIob && _iob.iobU > 0) const SizedBox(height: 12),
+          if (_iobFailed) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEBEE),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFFCDD2)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline, color: AppColors.error),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Não foi possível calcular o IOB. '
+                      'A dose pode ficar superestimada.',
+                      style: TextStyle(
+                        color: AppColors.error,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          const DisclaimerBanner(),
+          const SizedBox(height: 12),
           SectionCard(
             title: 'Glicose atual',
             icon: Icons.water_drop,
@@ -347,42 +436,46 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Column(
                     children: [
-                      TextFormField(
-                        controller: _glucoseController,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 48,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.ink,
-                          height: 1.1,
-                        ),
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(
-                          hintText: '105',
-                          hintStyle: TextStyle(
+                      Semantics(
+                        label: 'Glicose em miligramas por decilitro',
+                        textField: true,
+                        child: TextFormField(
+                          controller: _glucoseController,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFFB0BEC5),
+                            color: AppColors.ink,
+                            height: 1.1,
                           ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding: EdgeInsets.zero,
-                          errorStyle: TextStyle(height: 0.8),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          decoration: const InputDecoration(
+                            hintText: 'ex.: 120',
+                            hintStyle: TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.hint,
+                            ),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            contentPadding: EdgeInsets.zero,
+                            errorStyle: TextStyle(height: 0.8),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Informe a glicose';
+                            }
+                            final n = int.tryParse(value.trim());
+                            if (n == null || n <= 0) return 'Valor inválido';
+                            return null;
+                          },
+                          onChanged: _updateGlucoseWarning,
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Informe a glicose';
-                          }
-                          final n = int.tryParse(value.trim());
-                          if (n == null || n <= 0) return 'Valor inválido';
-                          return null;
-                        },
-                        onChanged: (_) => setState(() {}),
                       ),
                       const Text(
                         'mg/dL',
@@ -395,6 +488,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
+                if (_glucoseWarning != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _glucoseWarning!,
+                    style: const TextStyle(
+                      color: AppColors.warning,
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -493,7 +598,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: Colors.black54,
                               shape: const CircleBorder(),
                               child: IconButton(
-                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 48,
+                                  minHeight: 48,
+                                ),
                                 onPressed: () {
                                   setState(() {
                                     _photoBytes = null;
@@ -503,7 +611,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 icon: const Icon(
                                   Icons.close,
                                   color: Colors.white,
-                                  size: 18,
+                                  size: 20,
                                 ),
                               ),
                             ),
@@ -561,10 +669,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _carbsController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                    ],
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [decimalInputFormatter],
                     decoration: const InputDecoration(
                       labelText: 'Carboidratos (g)',
                       prefixIcon: Icon(Icons.grain),
@@ -600,7 +708,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 14),
             Text(
               _error!,
-              style: const TextStyle(color: AppColors.accent, fontSize: 13),
+              style: const TextStyle(color: AppColors.error, fontSize: 13),
             ),
           ],
         ],
@@ -610,7 +718,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (widget.embedded) return body;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Nova dose')),
+      appBar: AppBar(title: const Text('Dose')),
       body: body,
     );
   }

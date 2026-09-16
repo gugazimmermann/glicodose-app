@@ -18,7 +18,37 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  static const _titles = ['Nova dose', 'Histórico', 'Perfil'];
+  static const _titles = ['Dose', 'Histórico', 'Perfil'];
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.services.selectedTabIndex.value;
+    widget.services.selectedTabIndex.addListener(_onTabRequested);
+  }
+
+  @override
+  void dispose() {
+    widget.services.selectedTabIndex.removeListener(_onTabRequested);
+    super.dispose();
+  }
+
+  void _onTabRequested() {
+    final next = widget.services.selectedTabIndex.value;
+    if (!mounted || next == _index) return;
+    setState(() => _index = next);
+    if (next == 1) {
+      widget.services.notifyEntriesChanged();
+    }
+  }
+
+  void _selectTab(int value) {
+    setState(() => _index = value);
+    widget.services.selectedTabIndex.value = value;
+    if (value == 1) {
+      widget.services.notifyEntriesChanged();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,12 +68,7 @@ class _MainShellState extends State<MainShell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (value) {
-          setState(() => _index = value);
-          if (value == 1) {
-            widget.services.notifyEntriesChanged();
-          }
-        },
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.water_drop_outlined),

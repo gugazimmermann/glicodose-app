@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
+import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 
@@ -57,7 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -171,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               Text(
                                 _error!,
                                 style: const TextStyle(
-                                  color: AppColors.accent,
+                                  color: AppColors.error,
                                   fontSize: 13,
                                 ),
                               ),

@@ -32,8 +32,16 @@ class AppServices {
   /// Bumped whenever entries are created/updated/deleted so History reloads.
   final ValueNotifier<int> entriesRevision = ValueNotifier<int>(0);
 
+  /// Shell bottom-nav index: 0 Dose, 1 Histórico, 2 Perfil.
+  final ValueNotifier<int> selectedTabIndex = ValueNotifier<int>(0);
+
   void notifyEntriesChanged() {
     entriesRevision.value++;
+  }
+
+  void goToHistoryTab() {
+    selectedTabIndex.value = 1;
+    notifyEntriesChanged();
   }
 }
 

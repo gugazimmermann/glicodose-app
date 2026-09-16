@@ -5,6 +5,7 @@ import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
+import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 
@@ -115,7 +116,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _disclaimerAcceptedAt = profile.disclaimerAcceptedAt;
       }
     } catch (e) {
-      _error = e.toString();
+      _error = userFacingError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -163,7 +164,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Navigator.of(context).pop(true);
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -397,7 +398,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 14),
                   Text(
                     _error!,
-                    style: const TextStyle(color: AppColors.accent),
+                    style: const TextStyle(color: AppColors.error),
                   ),
                 ],
                 const SizedBox(height: 20),

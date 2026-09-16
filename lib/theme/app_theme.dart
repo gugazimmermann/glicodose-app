@@ -4,11 +4,15 @@ class AppColors {
   static const primary = Color(0xFF2F7CC4);
   static const primaryDark = Color(0xFF1E5A94);
   static const accent = Color(0xFFE31C23);
+  static const error = Color(0xFFB71C1C);
+  static const warning = Color(0xFFE65100);
+  static const warningSoft = Color(0xFFFFF4E5);
   static const surface = Color(0xFFF3F6FA);
   static const card = Color(0xFFFFFFFF);
   static const ink = Color(0xFF121212);
   static const muted = Color(0xFF5A6570);
   static const primarySoft = Color(0xFFE8F1F9);
+  static const hint = Color(0xFF90A4AE);
 }
 
 class AppTheme {
@@ -25,7 +29,7 @@ class AppTheme {
       onSecondaryContainer: AppColors.accent,
       tertiary: AppColors.primaryDark,
       onTertiary: Colors.white,
-      error: AppColors.accent,
+      error: AppColors.error,
       onError: Colors.white,
       surface: AppColors.surface,
       onSurface: AppColors.ink,
@@ -79,7 +83,7 @@ class AppTheme {
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.accent),
+          borderSide: const BorderSide(color: AppColors.error),
         ),
         labelStyle: const TextStyle(color: AppColors.muted),
       ),

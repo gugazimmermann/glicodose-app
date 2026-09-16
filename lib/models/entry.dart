@@ -69,7 +69,7 @@ class Entry {
     int? glucoseMgdl,
     String? foodText,
     double? recommendedInsulin,
-    double? appliedInsulin,
+    Object? appliedInsulin = _unset,
   }) {
     return Entry(
       id: id,
@@ -79,12 +79,16 @@ class Entry {
       foodText: foodText ?? this.foodText,
       foodImagePath: foodImagePath,
       recommendedInsulin: recommendedInsulin ?? this.recommendedInsulin,
-      appliedInsulin: appliedInsulin ?? this.appliedInsulin,
+      appliedInsulin: identical(appliedInsulin, _unset)
+          ? this.appliedInsulin
+          : appliedInsulin as double?,
       gptRawResponse: gptRawResponse,
       createdAt: createdAt,
     );
   }
 }
+
+const Object _unset = Object();
 
 class InsulinRecommendation {
   const InsulinRecommendation({
@@ -125,7 +129,9 @@ class InsulinRecommendation {
       correcaoU: (json['correcao_u'] as num?)?.toDouble() ?? 0,
       bolusComidaU: (json['bolus_comida_u'] as num?)?.toDouble() ?? 0,
       insulinaRecomendadaU:
-          (json['insulina_recomendada_u'] as num).toDouble(),
+          (json['insulina_recomendada_u'] as num?)?.toDouble() ??
+              (json['recommended_insulin'] as num?)?.toDouble() ??
+              0,
       iobU: (json['iob_u'] as num?)?.toDouble() ?? 0,
       observacao: json['observacao'] as String?,
       source: (json['source'] as String?) ?? 'ai',
@@ -133,6 +139,24 @@ class InsulinRecommendation {
       metaPeriodo: json['meta_periodo'] as String?,
       horarioBr: json['horario_br'] as String?,
       raw: json,
+    );
+  }
+
+  /// Best-effort rebuild from a saved entry (history detail).
+  factory InsulinRecommendation.fromEntry(Entry entry) {
+    final raw = entry.gptRawResponse;
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        return InsulinRecommendation.fromJson(raw);
+      } catch (_) {}
+    }
+    return InsulinRecommendation(
+      carboidratosG: 0,
+      correcaoU: 0,
+      bolusComidaU: 0,
+      insulinaRecomendadaU: entry.recommendedInsulin ?? 0,
+      source: 'manual',
+      raw: raw,
     );
   }
 }

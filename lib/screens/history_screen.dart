@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
+import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
+import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
+import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 
@@ -25,6 +27,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   late Future<List<Entry>> _future;
+  final Map<String, String?> _photoUrls = {};
 
   @override
   void initState() {
@@ -46,6 +49,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _reload() {
     _future = widget.services.entries.listEntries();
+    _photoUrls.clear();
+  }
+
+  Future<String?> _photoUrl(Entry entry) async {
+    final path = entry.foodImagePath;
+    if (path == null || path.isEmpty) return null;
+    if (_photoUrls.containsKey(entry.id)) return _photoUrls[entry.id];
+    try {
+      final url = await widget.services.entries.createSignedUrl(path);
+      _photoUrls[entry.id] = url;
+      return url;
+    } catch (_) {
+      _photoUrls[entry.id] = null;
+      return null;
+    }
+  }
+
+  Future<void> _openDetail(Entry entry) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DoseResultScreen(
+          services: widget.services,
+          entry: entry,
+          recommendation: InsulinRecommendation.fromEntry(entry),
+          fromHistory: true,
+        ),
+      ),
+    );
+    if (mounted) setState(_reload);
   }
 
   Future<void> _confirmDelete(Entry entry) async {
@@ -60,7 +92,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.accent),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Remover'),
           ),
@@ -79,7 +111,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao remover: $e')),
+        SnackBar(content: Text(userFacingError(e))),
       );
     }
   }
@@ -103,7 +135,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao editar: $e')),
+        SnackBar(content: Text(userFacingError(e))),
       );
     }
   }
@@ -124,7 +156,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Text('Erro: ${snapshot.error}'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    userFacingError(snapshot.error!),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.error),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => setState(_reload),
+                    child: const Text('Tentar novamente'),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -152,6 +198,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.muted),
                   ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: () => widget.services.selectedTabIndex.value = 0,
+                    child: const Text('Registrar primeira dose'),
+                  ),
                 ],
               ),
             ),
@@ -173,118 +224,224 @@ class _HistoryScreenState extends State<HistoryScreen> {
               final food = (entry.foodText?.isNotEmpty == true)
                   ? entry.foodText!
                   : (entry.foodImagePath != null ? 'Foto anexada' : '—');
-              return SectionCard(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              final differs = entry.recommendedInsulin != null &&
+                  entry.appliedInsulin != null &&
+                  entry.recommendedInsulin != entry.appliedInsulin;
+              final carbs = (entry.gptRawResponse?['carboidratos_g'] as num?)
+                  ?.toDouble();
+              final iob =
+                  (entry.gptRawResponse?['iob_u'] as num?)?.toDouble();
+
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => _openDetail(entry),
+                  child: SectionCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          alignment: Alignment.center,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${entry.glucoseMgdl}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.ink,
-                                  height: 1,
-                                ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: AppColors.primarySoft,
+                                borderRadius: BorderRadius.circular(14),
                               ),
-                              const Text(
-                                'mg/dL',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.muted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                dateFormat.format(entry.recordedAt.toLocal()),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.muted,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
+                              alignment: Alignment.center,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  _DoseBadge(
-                                    label: 'Rec',
-                                    value: entry.recommendedInsulin,
+                                  Text(
+                                    '${entry.glucoseMgdl}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.ink,
+                                      height: 1,
+                                    ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  _DoseBadge(
-                                    label: 'Apl',
-                                    value: entry.appliedInsulin,
-                                    highlight: true,
+                                  const Text(
+                                    'mg/dL',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.muted,
+                                    ),
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-                        ),
-                        PopupMenuButton<String>(
-                          onSelected: (value) {
-                            if (value == 'edit') _editEntry(entry);
-                            if (value == 'delete') _confirmDelete(entry);
-                          },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: ListTile(
-                                dense: true,
-                                leading: Icon(Icons.edit_outlined),
-                                title: Text('Editar'),
-                                contentPadding: EdgeInsets.zero,
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    dateFormat
+                                        .format(entry.recordedAt.toLocal()),
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.muted,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    children: [
+                                      _DoseBadge(
+                                        label: 'Recomendada',
+                                        value: entry.recommendedInsulin,
+                                      ),
+                                      _DoseBadge(
+                                        label: entry.appliedInsulin == null
+                                            ? 'Aplicada'
+                                            : 'Aplicada',
+                                        value: entry.appliedInsulin,
+                                        highlight: true,
+                                        pending: entry.appliedInsulin == null,
+                                        differs: differs,
+                                      ),
+                                    ],
+                                  ),
+                                  if (carbs != null || iob != null) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      [
+                                        if (carbs != null)
+                                          'Carbs ${formatWhole(carbs)} g',
+                                        if (iob != null)
+                                          'IOB ${formatWhole(iob)} U',
+                                      ].join(' · '),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: ListTile(
-                                dense: true,
-                                leading: Icon(
-                                  Icons.delete_outline,
-                                  color: AppColors.accent,
+                            PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'edit') _editEntry(entry);
+                                if (value == 'delete') _confirmDelete(entry);
+                              },
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(
+                                  value: 'edit',
+                                  child: ListTile(
+                                    dense: true,
+                                    leading: Icon(Icons.edit_outlined),
+                                    title: Text('Editar'),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
                                 ),
-                                title: Text('Excluir'),
-                                contentPadding: EdgeInsets.zero,
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: ListTile(
+                                    dense: true,
+                                    leading: Icon(
+                                      Icons.delete_outline,
+                                      color: AppColors.error,
+                                    ),
+                                    title: Text('Excluir'),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (entry.foodImagePath != null) ...[
+                              FutureBuilder<String?>(
+                                future: _photoUrl(entry),
+                                builder: (context, snap) {
+                                  final url = snap.data;
+                                  if (url == null) {
+                                    return Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(
+                                        Icons.image_outlined,
+                                        color: AppColors.muted,
+                                      ),
+                                    );
+                                  }
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.network(
+                                      url,
+                                      width: 56,
+                                      height: 56,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => Container(
+                                        width: 56,
+                                        height: 56,
+                                        color: AppColors.surface,
+                                        child: const Icon(
+                                          Icons.broken_image_outlined,
+                                          color: AppColors.muted,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            Expanded(
+                              child: Text(
+                                food,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: AppColors.ink,
+                                  height: 1.35,
+                                ),
                               ),
                             ),
                           ],
                         ),
+                        if (differs) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Aplicada diferente da recomendada',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ],
+                        if (entry.appliedInsulin == null) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Aguardando confirmação da dose aplicada',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      food,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.ink,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               );
             },
@@ -363,7 +520,6 @@ class _EditEntrySheetState extends State<_EditEntrySheet> {
           TextField(
             controller: _glucose,
             keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(labelText: 'Glicose (mg/dL)'),
           ),
           const SizedBox(height: 12),
@@ -374,9 +530,12 @@ class _EditEntrySheetState extends State<_EditEntrySheet> {
           const SizedBox(height: 12),
           TextField(
             controller: _applied,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(labelText: 'Insulina aplicada (U)'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [decimalInputFormatter],
+            decoration: const InputDecoration(
+              labelText: 'Insulina aplicada (U)',
+              helperText: 'Deixe vazio se ainda não confirmou a dose',
+            ),
           ),
           const SizedBox(height: 12),
           ListTile(
@@ -412,12 +571,18 @@ class _EditEntrySheetState extends State<_EditEntrySheet> {
           FilledButton(
             onPressed: () {
               final glucose = int.tryParse(_glucose.text.trim());
-              final applied = double.tryParse(
-                _applied.text.trim().replaceAll(',', '.'),
-              );
+              final appliedRaw = _applied.text.trim();
+              final applied =
+                  appliedRaw.isEmpty ? null : parseDecimal(appliedRaw);
               if (glucose == null || glucose <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Glicose inválida')),
+                );
+                return;
+              }
+              if (appliedRaw.isNotEmpty && applied == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Insulina aplicada inválida')),
                 );
                 return;
               }
@@ -426,7 +591,7 @@ class _EditEntrySheetState extends State<_EditEntrySheet> {
                 widget.entry.copyWith(
                   glucoseMgdl: glucose,
                   foodText: _food.text.trim(),
-                  appliedInsulin: applied ?? widget.entry.appliedInsulin,
+                  appliedInsulin: applied,
                   recordedAt: _recordedAt,
                 ),
               );
@@ -444,26 +609,46 @@ class _DoseBadge extends StatelessWidget {
     required this.label,
     required this.value,
     this.highlight = false,
+    this.pending = false,
+    this.differs = false,
   });
 
   final String label;
   final double? value;
   final bool highlight;
+  final bool pending;
+  final bool differs;
 
   @override
   Widget build(BuildContext context) {
+    final bg = differs
+        ? AppColors.warningSoft
+        : highlight
+            ? AppColors.primary
+            : AppColors.surface;
+    final fg = differs
+        ? AppColors.warning
+        : highlight
+            ? Colors.white
+            : AppColors.ink;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: highlight ? AppColors.primary : AppColors.surface,
+        color: bg,
         borderRadius: BorderRadius.circular(999),
+        border: differs
+            ? Border.all(color: const Color(0xFFFFCC80))
+            : null,
       ),
       child: Text(
-        '$label ${value == null ? '—' : formatWhole(value)} U',
+        pending
+            ? '$label —'
+            : '$label ${value == null ? '—' : formatWhole(value)} U',
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: highlight ? Colors.white : AppColors.ink,
+          color: fg,
         ),
       ),
     );
