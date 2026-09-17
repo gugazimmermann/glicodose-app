@@ -4,11 +4,30 @@ import 'package:diabetes_app/models/entry.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+class EntriesPage {
+  const EntriesPage({
+    required this.entries,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+  });
+
+  final List<Entry> entries;
+  final int total;
+  final int page;
+  final int pageSize;
+
+  int get totalPages => total == 0 ? 1 : ((total + pageSize - 1) ~/ pageSize);
+  bool get hasPrev => page > 0;
+  bool get hasNext => page + 1 < totalPages;
+}
+
 class EntryService {
   EntryService(this._client);
 
   final SupabaseClient _client;
   static const _bucket = 'food-photos';
+  static const defaultPageSize = 50;
 
   Future<List<Entry>> listEntries({int limit = 50}) async {
     final userId = _client.auth.currentUser?.id;
@@ -24,6 +43,46 @@ class EntryService {
     return (data as List)
         .map((e) => Entry.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
+  }
+
+  Future<EntriesPage> listEntriesPage({
+    int page = 0,
+    int pageSize = defaultPageSize,
+    bool ascending = false,
+  }) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      return EntriesPage(
+        entries: const [],
+        total: 0,
+        page: page,
+        pageSize: pageSize,
+      );
+    }
+
+    final safePage = page < 0 ? 0 : page;
+    final from = safePage * pageSize;
+    final to = from + pageSize - 1;
+
+    final response = await _client
+        .from('entries')
+        .select()
+        .eq('user_id', userId)
+        .order('recorded_at', ascending: ascending)
+        .range(from, to)
+        .count(CountOption.exact);
+
+    final rows = response.data as List? ?? const [];
+    final entries = rows
+        .map((e) => Entry.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+
+    return EntriesPage(
+      entries: entries,
+      total: response.count,
+      page: safePage,
+      pageSize: pageSize,
+    );
   }
 
   Future<List<Entry>> listEntriesSince(DateTime since) async {

@@ -13,6 +13,7 @@ class Profile {
     this.doseStep = 1,
     this.insulinDurationHours = 4,
     this.disclaimerAcceptedAt,
+    this.shareCode,
     this.createdAt,
     this.updatedAt,
   });
@@ -36,6 +37,8 @@ class Profile {
   final double doseStep;
   final double insulinDurationHours;
   final DateTime? disclaimerAcceptedAt;
+  /// Unique 6-char code (A-Z0-9) for doctor linking.
+  final String? shareCode;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -80,6 +83,7 @@ class Profile {
       disclaimerAcceptedAt: json['disclaimer_accepted_at'] != null
           ? DateTime.parse(json['disclaimer_accepted_at'] as String)
           : null,
+      shareCode: json['share_code'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -123,6 +127,7 @@ class Profile {
     double? doseStep,
     double? insulinDurationHours,
     DateTime? disclaimerAcceptedAt,
+    String? shareCode,
     bool clearDisclaimer = false,
   }) {
     return Profile(
@@ -142,6 +147,7 @@ class Profile {
       disclaimerAcceptedAt: clearDisclaimer
           ? null
           : (disclaimerAcceptedAt ?? this.disclaimerAcceptedAt),
+      shareCode: shareCode ?? this.shareCode,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

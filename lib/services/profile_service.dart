@@ -10,13 +10,24 @@ class ProfileService {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return null;
 
-    final data = await _client
+    var data = await _client
         .from('profiles')
         .select()
         .eq('id', userId)
         .maybeSingle();
 
     if (data == null) return null;
+
+    if (data['share_code'] == null) {
+      await _client.rpc('ensure_share_code');
+      data = await _client
+          .from('profiles')
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
+      if (data == null) return null;
+    }
+
     return Profile.fromJson(data);
   }
 

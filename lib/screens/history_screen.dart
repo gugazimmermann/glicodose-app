@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/screens/dose_result_screen.dart';
+import 'package:diabetes_app/screens/history_charts_tab.dart';
+import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -25,9 +27,85 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> {
-  late Future<List<Entry>> _future;
+class _HistoryScreenState extends State<HistoryScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tabs = TabBarView(
+      controller: _tabController,
+      children: [
+        _HistoryListTab(services: widget.services),
+        HistoryChartsTab(services: widget.services),
+      ],
+    );
+
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Material(
+            color: AppColors.card,
+            child: TabBar(
+              controller: _tabController,
+              labelColor: AppColors.primaryDark,
+              unselectedLabelColor: AppColors.muted,
+              indicatorColor: AppColors.primary,
+              tabs: const [
+                Tab(text: 'Lista'),
+                Tab(text: 'Gráficos'),
+              ],
+            ),
+          ),
+          Expanded(child: tabs),
+        ],
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Histórico'),
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          tabs: const [
+            Tab(text: 'Lista'),
+            Tab(text: 'Gráficos'),
+          ],
+        ),
+      ),
+      body: tabs,
+    );
+  }
+}
+
+class _HistoryListTab extends StatefulWidget {
+  const _HistoryListTab({required this.services});
+
+  final AppServices services;
+
+  @override
+  State<_HistoryListTab> createState() => _HistoryListTabState();
+}
+
+class _HistoryListTabState extends State<_HistoryListTab> {
+  late Future<EntriesPage> _future;
   final Map<String, String?> _photoUrls = {};
+  int _page = 0;
 
   @override
   void initState() {
@@ -44,12 +122,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _onEntriesChanged() {
     if (!mounted) return;
-    setState(_reload);
+    setState(() {
+      _page = 0;
+      _reload();
+    });
   }
 
   void _reload() {
-    _future = widget.services.entries.listEntries();
+    _future = widget.services.entries.listEntriesPage(page: _page);
     _photoUrls.clear();
+  }
+
+  void _goToPage(int page) {
+    setState(() {
+      _page = page;
+      _reload();
+    });
   }
 
   Future<String?> _photoUrl(Entry entry) async {
@@ -144,7 +232,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
 
-    final body = FutureBuilder<List<Entry>>(
+    return FutureBuilder<EntriesPage>(
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
@@ -174,8 +262,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           );
         }
-        final entries = snapshot.data ?? [];
-        if (entries.isEmpty) {
+        final pageData = snapshot.data!;
+        final entries = pageData.entries;
+        if (pageData.total == 0) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(32),
@@ -212,14 +301,61 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return RefreshIndicator(
           color: AppColors.primary,
           onRefresh: () async {
-            setState(_reload);
+            setState(() {
+              _page = 0;
+              _reload();
+            });
             await _future;
           },
           child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-            itemCount: entries.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemCount: entries.length + 1,
+            separatorBuilder: (_, index) {
+              if (index >= entries.length - 1) return const SizedBox.shrink();
+              return const SizedBox(height: 12);
+            },
             itemBuilder: (context, index) {
+              if (index == entries.length) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Página ${pageData.page + 1} de ${pageData.totalPages}'
+                        ' · ${pageData.total} registros',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: pageData.hasPrev
+                                  ? () => _goToPage(pageData.page - 1)
+                                  : null,
+                              child: const Text('Anterior'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: pageData.hasNext
+                                  ? () => _goToPage(pageData.page + 1)
+                                  : null,
+                              child: const Text('Próxima'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }
+
               final entry = entries[index];
               final food = (entry.foodText?.isNotEmpty == true)
                   ? entry.foodText!
@@ -299,9 +435,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                         value: entry.recommendedInsulin,
                                       ),
                                       _DoseBadge(
-                                        label: entry.appliedInsulin == null
-                                            ? 'Aplicada'
-                                            : 'Aplicada',
+                                        label: 'Aplicada',
                                         value: entry.appliedInsulin,
                                         highlight: true,
                                         pending: entry.appliedInsulin == null,
@@ -448,21 +582,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         );
       },
-    );
-
-    if (widget.embedded) return body;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Histórico'),
-        actions: [
-          IconButton(
-            onPressed: () => setState(_reload),
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: body,
     );
   }
 }

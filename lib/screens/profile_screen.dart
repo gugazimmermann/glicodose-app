@@ -43,6 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _saving = false;
   String? _error;
   String? _userId;
+  String? _shareCode;
 
   @override
   void initState() {
@@ -114,6 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _nightStartMinute = profile.nightStartMinute;
         _nightEndMinute = profile.nightEndMinute;
         _disclaimerAcceptedAt = profile.disclaimerAcceptedAt;
+        _shareCode = profile.shareCode;
       }
     } catch (e) {
       _error = userFacingError(e);
@@ -219,6 +221,82 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                if (!widget.isOnboarding && _shareCode != null) ...[
+                  SectionCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Código para o médico',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Compartilhe este código com seu médico para ele '
+                          'acompanhar seu histórico.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.muted,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFFC5D0DB),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _shareCode!,
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 4,
+                                    color: AppColors.primaryDark,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Copiar código',
+                                onPressed: () async {
+                                  await Clipboard.setData(
+                                    ClipboardData(text: _shareCode!),
+                                  );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Código copiado'),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.copy_rounded,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                 ],
