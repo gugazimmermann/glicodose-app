@@ -6,3 +6,7 @@ verify_jwt = true
 
 [functions.transcribe-food]
 verify_jwt = true
+
+# Authenticated via REVENUECAT_WEBHOOK_AUTH (Authorization header), not JWT.
+[functions.revenuecat-webhook]
+verify_jwt = false

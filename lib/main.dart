@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:diabetes_app/app.dart';
@@ -6,10 +7,12 @@ import 'package:diabetes_app/config/supabase_config.dart';
 import 'package:diabetes_app/services/brazil_time.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   BrazilTime.ensureInitialized();
 
   if (!SupabaseConfig.isConfigured) {
+    FlutterNativeSplash.remove();
     runApp(const _ConfigMissingApp());
     return;
   }
@@ -20,6 +23,21 @@ Future<void> main() async {
   );
 
   final services = AppServices(Supabase.instance.client);
+  try {
+    await services.support.configure();
+    final userId = services.auth.currentUser?.id;
+    if (userId != null) {
+      await services.support.logIn(userId);
+    }
+  } catch (e, st) {
+    // IAP optional until store keys are configured.
+    assert(() {
+      // ignore: avoid_print
+      print('RevenueCat configure failed: $e\n$st');
+      return true;
+    }());
+  }
+
   runApp(DiabetesApp(services: services));
 }
 

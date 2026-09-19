@@ -10,13 +10,16 @@ import 'package:diabetes_app/screens/home_screen.dart';
 import 'package:diabetes_app/screens/login_screen.dart';
 import 'package:diabetes_app/screens/main_shell.dart';
 import 'package:diabetes_app/screens/profile_screen.dart';
+import 'package:diabetes_app/screens/splash_screen.dart';
 import 'package:diabetes_app/services/auth_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
 import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
+import 'package:diabetes_app/services/support_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
+import 'package:diabetes_app/widgets/app_logo.dart';
 
 class AppServices {
   AppServices(SupabaseClient client)
@@ -24,7 +27,8 @@ class AppServices {
         profile = ProfileService(client),
         entries = EntryService(client),
         insulin = InsulinService(client),
-        speech = SpeechService(client) {
+        speech = SpeechService(client),
+        support = SupportService() {
     iobBadge = IobBadgeService(entries: entries, profile: profile);
   }
 
@@ -33,6 +37,7 @@ class AppServices {
   final EntryService entries;
   final InsulinService insulin;
   final SpeechService speech;
+  final SupportService support;
   late final IobBadgeService iobBadge;
 
   /// Bumped whenever entries are created/updated/deleted so History reloads.
@@ -64,6 +69,7 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   StreamSubscription<AuthState>? _authSub;
   Timer? _badgeTimer;
   bool _loggedIn = false;
+  bool _showSplash = true;
 
   AppServices get services => widget.services;
 
@@ -100,19 +106,29 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   }
 
   void _onLoggedIn() {
-    unawaited(services.iobBadge.ensureNotificationPermission());
-    unawaited(services.iobBadge.refresh());
+    unawaited(() async {
+      await services.iobBadge.ensureReady();
+      await services.iobBadge.refresh();
+    }());
     _startBadgeTimer();
+    final userId = services.auth.currentUser?.id;
+    if (userId != null) {
+      unawaited(services.support.logIn(userId));
+    }
   }
 
   void _onLoggedOut() {
     _stopBadgeTimer();
     unawaited(services.iobBadge.clear());
+    unawaited(services.support.logOut());
   }
 
   void _onEntriesChanged() {
     if (!_loggedIn) return;
-    unawaited(services.iobBadge.refresh());
+    unawaited(() async {
+      await services.iobBadge.ensureReady();
+      await services.iobBadge.refresh();
+    }());
   }
 
   void _startBadgeTimer() {
@@ -132,7 +148,10 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _loggedIn) {
-      unawaited(services.iobBadge.refresh());
+      unawaited(() async {
+        await services.iobBadge.ensureReady();
+        await services.iobBadge.refresh();
+      }());
       _startBadgeTimer();
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
@@ -146,7 +165,14 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
       title: 'GlicoDose',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: AuthGate(services: services),
+      home: _showSplash
+          ? SplashScreen(
+              onFinished: () {
+                if (!mounted) return;
+                setState(() => _showSplash = false);
+              },
+            )
+          : AuthGate(services: services),
       routes: {
         '/login': (_) => LoginScreen(services: services),
         '/profile': (_) => ProfileScreen(services: services),
@@ -212,14 +238,17 @@ class _ProfileGateState extends State<ProfileGate> {
             body: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'images/glucosemeter.png',
-                    width: 72,
-                    height: 72,
+                children: const [
+                  AppLogo(size: 88, showTitle: true, titleSize: 26),
+                  SizedBox(height: 24),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: AppColors.primary,
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  const CircularProgressIndicator(color: AppColors.primary),
                 ],
               ),
             ),

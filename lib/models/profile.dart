@@ -14,6 +14,11 @@ class Profile {
     this.insulinDurationHours = 4,
     this.disclaimerAcceptedAt,
     this.shareCode,
+    this.supporterProductId,
+    this.supporterStatus = 'none',
+    this.supporterStore,
+    this.supporterExpiresAt,
+    this.supporterUpdatedAt,
     this.createdAt,
     this.updatedAt,
   });
@@ -39,8 +44,19 @@ class Profile {
   final DateTime? disclaimerAcceptedAt;
   /// Unique 6-char code (A-Z0-9) for doctor linking.
   final String? shareCode;
+  /// Mirrored from RevenueCat (read-only for the client upsert).
+  final String? supporterProductId;
+  final String supporterStatus;
+  final String? supporterStore;
+  final DateTime? supporterExpiresAt;
+  final DateTime? supporterUpdatedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get isSupporter =>
+      supporterStatus == 'active' ||
+      supporterStatus == 'grace' ||
+      supporterStatus == 'canceled';
 
   bool get isComplete =>
       targetGlucoseMgdl != null &&
@@ -84,6 +100,15 @@ class Profile {
           ? DateTime.parse(json['disclaimer_accepted_at'] as String)
           : null,
       shareCode: json['share_code'] as String?,
+      supporterProductId: json['supporter_product_id'] as String?,
+      supporterStatus: (json['supporter_status'] as String?) ?? 'none',
+      supporterStore: json['supporter_store'] as String?,
+      supporterExpiresAt: json['supporter_expires_at'] != null
+          ? DateTime.parse(json['supporter_expires_at'] as String)
+          : null,
+      supporterUpdatedAt: json['supporter_updated_at'] != null
+          ? DateTime.parse(json['supporter_updated_at'] as String)
+          : null,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -93,6 +118,7 @@ class Profile {
     );
   }
 
+  /// Client upsert payload — never writes supporter_* (webhook-owned).
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -128,6 +154,11 @@ class Profile {
     double? insulinDurationHours,
     DateTime? disclaimerAcceptedAt,
     String? shareCode,
+    String? supporterProductId,
+    String? supporterStatus,
+    String? supporterStore,
+    DateTime? supporterExpiresAt,
+    DateTime? supporterUpdatedAt,
     bool clearDisclaimer = false,
   }) {
     return Profile(
@@ -148,6 +179,11 @@ class Profile {
           ? null
           : (disclaimerAcceptedAt ?? this.disclaimerAcceptedAt),
       shareCode: shareCode ?? this.shareCode,
+      supporterProductId: supporterProductId ?? this.supporterProductId,
+      supporterStatus: supporterStatus ?? this.supporterStatus,
+      supporterStore: supporterStore ?? this.supporterStore,
+      supporterExpiresAt: supporterExpiresAt ?? this.supporterExpiresAt,
+      supporterUpdatedAt: supporterUpdatedAt ?? this.supporterUpdatedAt,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

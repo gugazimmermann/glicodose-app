@@ -51,6 +51,8 @@ cp .env.example .env
 ```env
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOi...
+REVENUECAT_IOS_API_KEY=appl_...
+REVENUECAT_ANDROID_API_KEY=goog_...
 ```
 
 3. Rode passando o arquivo:
@@ -68,6 +70,21 @@ flutter run --dart-define-from-file=.env
 ```bash
 supabase secrets set OPENAI_API_KEY=sk-sua-chave
 ```
+
+### Apoio recorrente (IAP)
+
+Assinaturas opcionais via Apple/Google + RevenueCat. Guia completo:
+
+[`docs/iap-store-setup.md`](docs/iap-store-setup.md)
+
+```bash
+# Migration 009 + webhook
+# SQL Editor: supabase/migrations/009_supporter_billing.sql
+supabase secrets set REVENUECAT_WEBHOOK_AUTH='um-segredo-longo'
+supabase functions deploy revenuecat-webhook
+```
+
+No perfil do app: seção **Apoiar o GlicoDose** (Android/iOS com keys no `.env`).
 
 Alternativa sem arquivo:
 
@@ -162,12 +179,14 @@ No app: microfone no campo de alimento → grava → Whisper → texto.
 
 ```
 lib/
-  config/          # URL e anon key
+  config/          # Supabase + RevenueCat + product IDs
   models/          # Profile, Entry
-  services/        # Auth, Profile, Entry, Insulin, Speech
+  services/        # Auth, Profile, Entry, Insulin, Speech, Support
   screens/         # Login, Profile, Home, History
-  widgets/
+  widgets/         # SupportSection, …
 supabase/
-  migrations/      # SQL
-  functions/       # recommend-insulin, transcribe-food
+  migrations/      # SQL (incl. 009_supporter_billing)
+  functions/       # recommend-insulin, transcribe-food, revenuecat-webhook
+docs/
+  iap-store-setup.md  # Produtos Apple/Google + RevenueCat + testes sandbox
 ```

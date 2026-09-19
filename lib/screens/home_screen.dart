@@ -14,6 +14,7 @@ import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/disclaimer_banner.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
+import 'package:diabetes_app/widgets/support_cta_banner.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -46,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _listening = false;
   bool _transcribing = false;
   bool _iobFailed = false;
+  bool _isSupporter = false;
   String? _error;
   String? _glucoseWarning;
 
@@ -153,7 +155,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _iobFailed = false;
     });
     try {
-      const duration = 4.0;
+      final profile = await widget.services.profile.fetchCurrent();
+      final duration = profile?.insulinDurationHours ?? 4.0;
       final since =
           DateTime.now().subtract(Duration(hours: duration.ceil() + 1));
       final entries = await widget.services.entries.listEntriesSince(since);
@@ -166,6 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _iob = snap;
           _iobFailed = false;
+          _isSupporter = profile?.isSupporter ?? false;
         });
       }
     } catch (_) {
@@ -709,6 +713,13 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               _error!,
               style: const TextStyle(color: AppColors.error, fontSize: 13),
+            ),
+          ],
+          if (!_isSupporter) ...[
+            const SizedBox(height: 16),
+            SupportCtaBanner(
+              visible: !_isSupporter,
+              onTap: () => widget.services.selectedTabIndex.value = 2,
             ),
           ],
         ],
