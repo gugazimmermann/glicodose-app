@@ -5,6 +5,7 @@ import 'package:diabetes_app/screens/history_screen.dart';
 import 'package:diabetes_app/screens/home_screen.dart';
 import 'package:diabetes_app/screens/profile_screen.dart';
 import 'package:diabetes_app/screens/support_screen.dart';
+import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 
 class MainShell extends StatefulWidget {
@@ -51,6 +52,26 @@ class _MainShellState extends State<MainShell> {
     }
   }
 
+  Future<void> _exportHistory(String value) async {
+    try {
+      final entries = await widget.services.entries.listEntries(limit: 500);
+      if (value == 'csv') {
+        await widget.services.export.shareCsv(entries);
+      } else if (value == 'report') {
+        final profile = await widget.services.profile.fetchCurrent();
+        await widget.services.export.sharePdfLikeReport(
+          profile: profile,
+          entries: entries,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(userFacingError(e))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -63,6 +84,20 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       appBar: AppBar(
         title: AppBarLogoTitle(title: _titles[_index]),
+        actions: [
+          if (_index == 1)
+            PopupMenuButton<String>(
+              tooltip: 'Exportar',
+              onSelected: _exportHistory,
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'csv', child: Text('Exportar CSV')),
+                PopupMenuItem(
+                  value: 'report',
+                  child: Text('Relatório para consulta'),
+                ),
+              ],
+            ),
+        ],
       ),
       body: IndexedStack(
         index: _index,

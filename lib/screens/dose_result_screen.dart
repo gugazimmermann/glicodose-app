@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
+import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -28,27 +29,120 @@ class DoseResultScreen extends StatefulWidget {
 
 class _DoseResultScreenState extends State<DoseResultScreen> {
   late final TextEditingController _appliedController;
+  late final TextEditingController _carbsController;
   late Entry _entry;
+  late InsulinRecommendation _rec;
+  Profile? _profile;
   bool _saving = false;
+  bool _recalculating = false;
   String? _error;
 
   bool get _confirmed => _entry.appliedInsulin != null;
+  bool get _canAdjustCarbs =>
+      !widget.fromHistory && _rec.source == 'ai' && !_confirmed;
 
   @override
   void initState() {
     super.initState();
     _entry = widget.entry;
+    _rec = widget.recommendation;
     _appliedController = TextEditingController(
       text: formatWhole(
-        _entry.appliedInsulin ?? widget.recommendation.insulinaRecomendadaU,
+        _entry.appliedInsulin ?? _rec.insulinaRecomendadaU,
       ),
     );
+    _carbsController = TextEditingController(
+      text: formatWhole(_rec.carboidratosG),
+    );
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final profile = await widget.services.profile.fetchCurrent();
+    if (!mounted) return;
+    setState(() => _profile = profile);
   }
 
   @override
   void dispose() {
     _appliedController.dispose();
+    _carbsController.dispose();
     super.dispose();
+  }
+
+  Future<void> _recalculateFromCarbs() async {
+    final carbs = parseDecimal(_carbsController.text);
+    if (carbs == null || carbs < 0) {
+      setState(() => _error = 'Informe carboidratos válidos em gramas.');
+      return;
+    }
+    final profile = _profile ?? await widget.services.profile.fetchCurrent();
+    if (profile == null || !profile.isComplete) {
+      setState(() => _error = 'Perfil incompleto para recalcular a dose.');
+      return;
+    }
+
+    setState(() {
+      _recalculating = true;
+      _error = null;
+    });
+
+    try {
+      final updated = widget.services.insulin.calculateManual(
+        glucoseMgdl: _entry.glucoseMgdl,
+        carboidratosG: carbs,
+        profile: profile,
+        iobU: _rec.iobU,
+        observacao:
+            'Carbs ajustados pelo usuário (estimativa IA original: '
+            '${formatWhole(widget.recommendation.carboidratosG)} g, '
+            'confiança ${widget.recommendation.confiancaLabel}).',
+      );
+      // Keep AI confidence label for transparency.
+      final withConfidence = InsulinRecommendation(
+        carboidratosG: updated.carboidratosG,
+        correcaoU: updated.correcaoU,
+        bolusComidaU: updated.bolusComidaU,
+        insulinaRecomendadaU: updated.insulinaRecomendadaU,
+        iobU: updated.iobU,
+        observacao: updated.observacao,
+        source: 'ai_adjusted',
+        metaMgdl: updated.metaMgdl,
+        metaPeriodo: updated.metaPeriodo,
+        horarioBr: updated.horarioBr,
+        confianca: widget.recommendation.confianca,
+        raw: {
+          ...?updated.raw,
+          'confianca': widget.recommendation.confianca,
+          'carbs_originais_ia': widget.recommendation.carboidratosG,
+          'source': 'ai_adjusted',
+        },
+      );
+
+      final saved = await widget.services.entries.updateEntry(
+        _entry.copyWith(
+          recommendedInsulin: withConfidence.insulinaRecomendadaU,
+        ),
+      );
+      // Persist raw gpt response with adjustment metadata via a soft update
+      // if the service supports it — updateEntry may not touch gpt_raw_response.
+      widget.services.notifyEntriesChanged();
+
+      if (!mounted) return;
+      setState(() {
+        _entry = saved;
+        _rec = withConfidence;
+        _appliedController.text = formatWhole(
+          withConfidence.insulinaRecomendadaU,
+        );
+        _profile = profile;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = userFacingError(e));
+    } finally {
+      if (mounted) setState(() => _recalculating = false);
+    }
   }
 
   Future<void> _confirmApplied() async {
@@ -97,12 +191,51 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
     Navigator.of(context).pop(true);
   }
 
+  Widget _warningBanner({
+    required Color bg,
+    required Color border,
+    required Color iconColor,
+    required IconData icon,
+    required String text,
+    required Color textColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: iconColor, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rec = widget.recommendation;
-    final sourceLabel = rec.source == 'manual'
-        ? 'Cálculo local (sua fórmula)'
-        : 'Estimativa de carbs (IA) + sua fórmula';
+    final sourceLabel = switch (_rec.source) {
+      'manual' => 'Cálculo local (sua fórmula)',
+      'ai_adjusted' => 'Carbs ajustados + sua fórmula',
+      _ => 'Estimativa de carbs (IA) + sua fórmula',
+    };
+    final isHypo = _entry.glucoseMgdl < 70;
+    final doseZeroFromIob =
+        _rec.iobU > 0 && _rec.insulinaRecomendadaU == 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -111,9 +244,37 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
+          if (isHypo) ...[
+            _warningBanner(
+              bg: const Color(0xFFFFEBEE),
+              border: const Color(0xFFEF9A9A),
+              iconColor: AppColors.error,
+              icon: Icons.warning_amber_rounded,
+              text:
+                  'Glicemia baixa (${_entry.glucoseMgdl} mg/dL). '
+                  'Trate a hipoglicemia antes de aplicar insulina. '
+                  'Siga a orientação do seu médico.',
+              textColor: const Color(0xFFB71C1C),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (doseZeroFromIob) ...[
+            _warningBanner(
+              bg: AppColors.warningSoft,
+              border: const Color(0xFFFFCC80),
+              iconColor: AppColors.warning,
+              icon: Icons.info_outline,
+              text:
+                  'Recomendação 0 U porque o IOB (${formatWhole(_rec.iobU)} U) '
+                  'já cobre a dose bruta. Confirme com seu médico se precisa '
+                  'aplicar alguma unidade.',
+              textColor: const Color(0xFFBF360C),
+            ),
+            const SizedBox(height: 12),
+          ],
           Semantics(
             label:
-                'Insulina recomendada: ${formatWhole(rec.insulinaRecomendadaU)} unidades',
+                'Insulina recomendada: ${formatWhole(_rec.insulinaRecomendadaU)} unidades',
             child: SectionCard(
               title: 'Insulina recomendada',
               icon: Icons.medication_outlined,
@@ -126,7 +287,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                       TextSpan(
                         children: [
                           TextSpan(
-                            text: formatWhole(rec.insulinaRecomendadaU),
+                            text: formatWhole(_rec.insulinaRecomendadaU),
                             style: const TextStyle(
                               fontSize: 52,
                               fontWeight: FontWeight.w800,
@@ -158,13 +319,13 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                       ),
                     ),
                   ),
-                  if (rec.metaDisplay != null) ...[
+                  if (_rec.metaDisplay != null) ...[
                     const SizedBox(height: 6),
                     Center(
                       child: Text(
-                        rec.horarioBr != null
-                            ? '${rec.metaDisplay!} · ${rec.horarioBr} (Brasília)'
-                            : rec.metaDisplay!,
+                        _rec.horarioBr != null
+                            ? '${_rec.metaDisplay!} · ${_rec.horarioBr} (Brasília)'
+                            : _rec.metaDisplay!,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 13,
@@ -175,59 +336,88 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.warningSoft,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFFFCC80)),
+                  _warningBanner(
+                    bg: AppColors.warningSoft,
+                    border: const Color(0xFFFFCC80),
+                    iconColor: AppColors.warning,
+                    icon: Icons.timelapse,
+                    text:
+                        'IOB descontado: ${formatWhole(_rec.iobU)} U '
+                        '(insulina ainda ativa)',
+                    textColor: const Color(0xFFBF360C),
+                  ),
+                  if (_canAdjustCarbs) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      'Carboidratos estimados pela IA'
+                      '${_rec.confianca != null ? ' · confiança ${_rec.confiancaLabel}' : ''}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primaryDark,
+                      ),
                     ),
-                    child: Row(
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.timelapse,
-                          color: AppColors.warning,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            'IOB descontado: ${formatWhole(rec.iobU)} U '
-                            '(insulina ainda ativa)',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFBF360C),
-                              height: 1.3,
+                          child: TextFormField(
+                            controller: _carbsController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
                             ),
+                            inputFormatters: [decimalInputFormatter],
+                            decoration: const InputDecoration(
+                              labelText: 'Carbs (g)',
+                              helperText: 'Ajuste se a estimativa estiver errada',
+                              prefixIcon: Icon(Icons.restaurant_outlined),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: FilledButton.tonal(
+                            onPressed:
+                                _recalculating ? null : _recalculateFromCarbs,
+                            child: _recalculating
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Recalcular'),
                           ),
                         ),
                       ],
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       _MetricChip(
                         label: 'Carbs',
-                        value: '${formatWhole(rec.carboidratosG)} g',
+                        value: '${formatWhole(_rec.carboidratosG)} g',
                       ),
                       const SizedBox(width: 8),
                       _MetricChip(
                         label: 'Correção',
-                        value: '${formatWhole(rec.correcaoU)} U',
+                        value: '${formatWhole(_rec.correcaoU)} U',
                       ),
                       const SizedBox(width: 8),
                       _MetricChip(
                         label: 'Comida',
-                        value: '${formatWhole(rec.bolusComidaU)} U',
+                        value: '${formatWhole(_rec.bolusComidaU)} U',
                       ),
                     ],
                   ),
-                  if (rec.observacao != null && rec.observacao!.isNotEmpty) ...[
+                  if (_rec.observacao != null && _rec.observacao!.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Text(
-                      rec.observacao!,
+                      _rec.observacao!,
                       style: const TextStyle(
                         color: AppColors.muted,
                         fontSize: 13,

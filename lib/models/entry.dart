@@ -102,6 +102,7 @@ class InsulinRecommendation {
     this.metaMgdl,
     this.metaPeriodo,
     this.horarioBr,
+    this.confianca,
     this.raw,
   });
 
@@ -115,12 +116,27 @@ class InsulinRecommendation {
   final int? metaMgdl;
   final String? metaPeriodo;
   final String? horarioBr;
+  /// AI carb confidence: baixa | media | alta
+  final String? confianca;
   final Map<String, dynamic>? raw;
 
   String? get metaDisplay {
     if (metaMgdl == null) return null;
     final periodo = metaPeriodo ?? '';
     return 'Meta aplicada: $metaMgdl mg/dL${periodo.isEmpty ? '' : ' ($periodo)'}';
+  }
+
+  String get confiancaLabel {
+    switch (confianca) {
+      case 'baixa':
+        return 'Baixa';
+      case 'alta':
+        return 'Alta';
+      case 'media':
+        return 'Média';
+      default:
+        return '—';
+    }
   }
 
   factory InsulinRecommendation.fromJson(Map<String, dynamic> json) {
@@ -138,6 +154,7 @@ class InsulinRecommendation {
       metaMgdl: (json['meta_mgdl'] as num?)?.toInt(),
       metaPeriodo: json['meta_periodo'] as String?,
       horarioBr: json['horario_br'] as String?,
+      confianca: json['confianca'] as String?,
       raw: json,
     );
   }

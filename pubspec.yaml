@@ -51,7 +51,8 @@ dependencies:
   url_launcher: ^6.3.2
   flutter_local_notifications: ^22.3.1
   flutter_native_splash: ^2.4.6
-
+  share_plus: ^13.3.0
+  shared_preferences: ^2.5.5
 dev_dependencies:
   flutter_test:
     sdk: flutter

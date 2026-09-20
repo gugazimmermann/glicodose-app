@@ -18,6 +18,62 @@ type Profile = {
   isf_mgdl_per_u: number | null
   ic_ratio: number | null
   rapid_insulin_name: string | null
+  dose_step: number | null
+}
+
+/** GPT-4o approx USD per 1M tokens (input / output) — observability only */
+const GPT4O_INPUT_PER_M = 2.5
+const GPT4O_OUTPUT_PER_M = 10
+
+function estimateCostUsd(promptTokens: number, completionTokens: number) {
+  return (
+    (promptTokens / 1_000_000) * GPT4O_INPUT_PER_M +
+    (completionTokens / 1_000_000) * GPT4O_OUTPUT_PER_M
+  )
+}
+
+async function logAiUsage(opts: {
+  supabaseUrl: string
+  serviceKey: string | undefined
+  userId: string
+  model: string
+  promptTokens: number
+  completionTokens: number
+  latencyMs: number
+  success: boolean
+  errorMessage?: string
+  meta?: Record<string, unknown>
+}) {
+  if (!opts.serviceKey) return
+  try {
+    const admin = createClient(opts.supabaseUrl, opts.serviceKey)
+    const total = opts.promptTokens + opts.completionTokens
+    await admin.from('ai_usage_logs').insert({
+      function_name: 'recommend-insulin',
+      user_id: opts.userId,
+      model: opts.model,
+      prompt_tokens: opts.promptTokens,
+      completion_tokens: opts.completionTokens,
+      total_tokens: total,
+      latency_ms: opts.latencyMs,
+      success: opts.success,
+      error_message: opts.errorMessage ?? null,
+      estimated_cost_usd: estimateCostUsd(
+        opts.promptTokens,
+        opts.completionTokens,
+      ),
+      meta: opts.meta ?? {},
+    })
+  } catch {
+    // Observability must not break the dose path
+  }
+}
+
+function normalizeConfidence(raw: unknown): 'baixa' | 'media' | 'alta' {
+  const v = String(raw ?? '').toLowerCase().trim()
+  if (v === 'baixa' || v === 'low') return 'baixa'
+  if (v === 'alta' || v === 'high') return 'alta'
+  return 'media'
 }
 
 function roundToStep(value: number, step: number): number {
@@ -133,7 +189,7 @@ Deno.serve(async (req) => {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select(
-        'diabetes_type, target_glucose_mgdl, target_night_mgdl, night_start_minute, night_end_minute, isf_mgdl_per_u, ic_ratio, rapid_insulin_name',
+        'diabetes_type, target_glucose_mgdl, target_night_mgdl, night_start_minute, night_end_minute, isf_mgdl_per_u, ic_ratio, rapid_insulin_name, dose_step',
       )
       .eq('id', user.id)
       .maybeSingle()
@@ -157,7 +213,8 @@ Deno.serve(async (req) => {
       }, 400)
     }
 
-    const doseStep = 1
+    const rawStep = Number(p.dose_step)
+    const doseStep = Number.isFinite(rawStep) && rawStep > 0 ? rawStep : 1
     const isf = Number(p.isf_mgdl_per_u)
     const ic = Number(p.ic_ratio)
     const nightStart = Number(p.night_start_minute ?? 1200)
@@ -180,7 +237,7 @@ Refeição (texto): ${foodText ?? 'não informado'}
 Foto do alimento/rótulo: ${foodImageUrl ? 'anexada' : 'não informada'}
 
 Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
-{"carboidratos_g": number, "observacao": "string curta sobre a estimativa TACO"}`
+{"carboidratos_g": number, "confianca": "baixa|media|alta", "observacao": "string curta sobre a estimativa TACO"}`
 
     type ContentPart =
       | { type: 'text'; text: string }
@@ -194,6 +251,8 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
       })
     }
 
+    const model = 'gpt-4o'
+    const startedAt = Date.now()
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -201,28 +260,57 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model,
         temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
             content:
-              'Você estima carboidratos em gramas usando a tabela TACO (Brasil). Não calcule insulina. Responda só JSON.',
+              'Você estima carboidratos em gramas usando a tabela TACO (Brasil). Inclua confianca (baixa|media|alta). Não calcule insulina. Responda só JSON.',
           },
           { role: 'user', content },
         ],
       }),
     })
 
+    const latencyMs = Date.now() - startedAt
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
     if (!openaiRes.ok) {
       const errText = await openaiRes.text()
+      await logAiUsage({
+        supabaseUrl,
+        serviceKey,
+        userId: user.id,
+        model,
+        promptTokens: 0,
+        completionTokens: 0,
+        latencyMs,
+        success: false,
+        errorMessage: errText.slice(0, 500),
+      })
       return json({ error: `OpenAI: ${errText}` }, 502)
     }
 
     const openaiJson = await openaiRes.json()
+    const usage = openaiJson.usage ?? {}
+    const promptTokens = Number(usage.prompt_tokens) || 0
+    const completionTokens = Number(usage.completion_tokens) || 0
+
     const rawContent = openaiJson.choices?.[0]?.message?.content
     if (!rawContent || typeof rawContent !== 'string') {
+      await logAiUsage({
+        supabaseUrl,
+        serviceKey,
+        userId: user.id,
+        model,
+        promptTokens,
+        completionTokens,
+        latencyMs,
+        success: false,
+        errorMessage: 'empty response',
+      })
       return json({ error: 'Resposta vazia da OpenAI' }, 502)
     }
 
@@ -230,13 +318,37 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
     try {
       parsed = JSON.parse(rawContent)
     } catch {
+      await logAiUsage({
+        supabaseUrl,
+        serviceKey,
+        userId: user.id,
+        model,
+        promptTokens,
+        completionTokens,
+        latencyMs,
+        success: false,
+        errorMessage: 'invalid json',
+      })
       return json({ error: 'JSON inválido da OpenAI', raw: rawContent }, 502)
     }
 
     const carbsRaw = Number(parsed.carboidratos_g)
     if (!Number.isFinite(carbsRaw) || carbsRaw < 0) {
+      await logAiUsage({
+        supabaseUrl,
+        serviceKey,
+        userId: user.id,
+        model,
+        promptTokens,
+        completionTokens,
+        latencyMs,
+        success: false,
+        errorMessage: 'invalid carbs',
+      })
       return json({ error: 'carboidratos_g inválido', raw: parsed }, 502)
     }
+
+    const confianca = normalizeConfidence(parsed.confianca)
 
     const { carbs, correcao, bolusComida, doseBruta, doseFinal, iob } =
       computeBolus({
@@ -257,13 +369,27 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
         `IOB de ${iob} U cobre a dose bruta (${doseBruta} U); recomendação 0 U.`
     }
 
+    await logAiUsage({
+      supabaseUrl,
+      serviceKey,
+      userId: user.id,
+      model,
+      promptTokens,
+      completionTokens,
+      latencyMs,
+      success: true,
+      meta: { confianca, carbs },
+    })
+
     return json({
       carboidratos_g: carbs,
+      confianca,
       correcao_u: correcao,
       bolus_comida_u: bolusComida,
       iob_u: iob,
       insulina_recomendada_u: doseFinal,
       dose_bruta_u: doseBruta,
+      dose_step: doseStep,
       meta_mgdl: target,
       meta_periodo: periodo,
       horario_br: br.hm,

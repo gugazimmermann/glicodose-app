@@ -77,6 +77,39 @@ class _HistoryScreenState extends State<HistoryScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Histórico'),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Exportar',
+            onSelected: (value) async {
+              try {
+                final entries =
+                    await widget.services.entries.listEntries(limit: 500);
+                if (value == 'csv') {
+                  await widget.services.export.shareCsv(entries);
+                } else if (value == 'report') {
+                  final profile =
+                      await widget.services.profile.fetchCurrent();
+                  await widget.services.export.sharePdfLikeReport(
+                    profile: profile,
+                    entries: entries,
+                  );
+                }
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(userFacingError(e))),
+                );
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'csv', child: Text('Exportar CSV')),
+              PopupMenuItem(
+                value: 'report',
+                child: Text('Relatório para consulta'),
+              ),
+            ],
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
