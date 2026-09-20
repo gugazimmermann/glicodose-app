@@ -8,7 +8,6 @@ import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
-import 'package:diabetes_app/widgets/support_section.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -45,8 +44,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _error;
   String? _userId;
   String? _shareCode;
-  String? _supporterProductId;
-  String _supporterStatus = 'none';
 
   @override
   void initState() {
@@ -119,8 +116,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _nightEndMinute = profile.nightEndMinute;
         _disclaimerAcceptedAt = profile.disclaimerAcceptedAt;
         _shareCode = profile.shareCode;
-        _supporterProductId = profile.supporterProductId;
-        _supporterStatus = profile.supporterStatus;
       }
     } catch (e) {
       _error = userFacingError(e);
@@ -504,10 +499,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 if (!widget.isOnboarding) ...[
                   const SizedBox(height: 16),
-                  SupportSection(
-                    support: widget.services.support,
-                    profileProductId: _supporterProductId,
-                    profileStatus: _supporterStatus,
+                  OutlinedButton.icon(
+                    onPressed: _saving
+                        ? null
+                        : () {
+                            widget.services.selectedTabIndex.value = 2;
+                          },
+                    icon: const Icon(Icons.favorite_outline),
+                    label: const Text('Apoiar o GlicoDose'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                      side: const BorderSide(color: AppColors.accent),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(

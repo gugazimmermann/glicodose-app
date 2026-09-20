@@ -4,6 +4,7 @@ import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/screens/history_screen.dart';
 import 'package:diabetes_app/screens/home_screen.dart';
 import 'package:diabetes_app/screens/profile_screen.dart';
+import 'package:diabetes_app/screens/support_screen.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 
 class MainShell extends StatefulWidget {
@@ -18,7 +19,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  static const _titles = ['Dose', 'Histórico', 'Perfil'];
+  static const _titles = ['Dose', 'Histórico', 'Apoiar', 'Perfil'];
 
   @override
   void initState() {
@@ -55,6 +56,7 @@ class _MainShellState extends State<MainShell> {
     final pages = [
       HomeScreen(services: widget.services, embedded: true),
       HistoryScreen(services: widget.services, embedded: true),
+      SupportScreen(services: widget.services, embedded: true),
       ProfileScreen(services: widget.services, embedded: true),
     ];
 
@@ -79,6 +81,11 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history),
             label: 'Histórico',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.favorite_outline),
+            selectedIcon: Icon(Icons.favorite),
+            label: 'Apoiar',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

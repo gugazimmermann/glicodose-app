@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:diabetes_app/config/revenuecat_config.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 
-/// Compact call-to-action that jumps to the Profile support section.
+/// Compact call-to-action that jumps to the Apoiar tab.
 class SupportCtaBanner extends StatelessWidget {
   const SupportCtaBanner({
     super.key,

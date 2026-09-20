@@ -72,7 +72,7 @@ REVENUECAT_ANDROID_API_KEY=goog_...
 flutter run --dart-define-from-file=.env
 ```
 
-UI: aba Perfil → seção **Apoiar o GlicoDose** (somente Android/iOS com keys configuradas).
+UI: aba **Apoiar** (somente Android/iOS com keys configuradas). Também acessível pelo atalho no Perfil e pelo banner no topo da Dose.
 
 ## 6. Testes (sandbox)
 
@@ -102,4 +102,4 @@ UI: aba Perfil → seção **Apoiar o GlicoDose** (somente Android/iOS com keys 
 
 ## Review notes (Apple)
 
-> O app é gratuito. A seção “Apoiar” oferece assinaturas opcionais de apoio ao projeto (manutenção de infraestrutura/IA). Não bloqueia funcionalidades. Benefício: badge de apoiador e continuidade do serviço.
+> O app é gratuito. A aba “Apoiar” oferece assinaturas opcionais de apoio ao projeto (manutenção de infraestrutura/IA). Não bloqueia funcionalidades. Benefício: badge de apoiador e continuidade do serviço.

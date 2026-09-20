@@ -62,6 +62,19 @@ flutter pub get
 flutter run --dart-define-from-file=.env
 ```
 
+### Lembrete — emulador e device
+
+```bash
+# Abrir emulador
+flutter emulators --launch Pixel_10
+
+# Rodar no emulador
+flutter run --dart-define-from-file=.env -d emulator-5554
+
+# Rodar no device físico
+flutter run -d RXCW20156GV --dart-define-from-file=.env
+```
+
 **Importante**
 
 - O `.env` **não** deve ir para o git (já está no `.gitignore`).
@@ -84,7 +97,7 @@ supabase secrets set REVENUECAT_WEBHOOK_AUTH='um-segredo-longo'
 supabase functions deploy revenuecat-webhook
 ```
 
-No perfil do app: seção **Apoiar o GlicoDose** (Android/iOS com keys no `.env`).
+Aba **Apoiar** do app (Android/iOS com keys no `.env`).
 
 Alternativa sem arquivo:
 

@@ -359,6 +359,13 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
+          if (!_isSupporter) ...[
+            SupportCtaBanner(
+              visible: !_isSupporter,
+              onTap: () => widget.services.selectedTabIndex.value = 2,
+            ),
+            const SizedBox(height: 12),
+          ],
           if (!_loadingIob && _iob.iobU > 0)
             Container(
               padding: const EdgeInsets.all(12),
@@ -713,13 +720,6 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               _error!,
               style: const TextStyle(color: AppColors.error, fontSize: 13),
-            ),
-          ],
-          if (!_isSupporter) ...[
-            const SizedBox(height: 16),
-            SupportCtaBanner(
-              visible: !_isSupporter,
-              onTap: () => widget.services.selectedTabIndex.value = 2,
             ),
           ],
         ],
