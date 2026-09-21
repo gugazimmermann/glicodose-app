@@ -19,6 +19,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
+  late final List<Widget> _pages;
 
   static const _titles = ['Dose', 'Histórico', 'Apoiar', 'Perfil'];
 
@@ -27,6 +28,28 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     _index = widget.services.selectedTabIndex.value;
     widget.services.selectedTabIndex.addListener(_onTabRequested);
+    _pages = [
+      HomeScreen(
+        key: const ValueKey('dose'),
+        services: widget.services,
+        embedded: true,
+      ),
+      HistoryScreen(
+        key: const ValueKey('history'),
+        services: widget.services,
+        embedded: true,
+      ),
+      SupportScreen(
+        key: const ValueKey('support'),
+        services: widget.services,
+        embedded: true,
+      ),
+      ProfileScreen(
+        key: const ValueKey('profile'),
+        services: widget.services,
+        embedded: true,
+      ),
+    ];
   }
 
   @override
@@ -74,13 +97,6 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      HomeScreen(services: widget.services, embedded: true),
-      HistoryScreen(services: widget.services, embedded: true),
-      SupportScreen(services: widget.services, embedded: true),
-      ProfileScreen(services: widget.services, embedded: true),
-    ];
-
     return Scaffold(
       appBar: AppBar(
         title: AppBarLogoTitle(title: _titles[_index]),
@@ -101,7 +117,7 @@ class _MainShellState extends State<MainShell> {
       ),
       body: IndexedStack(
         index: _index,
-        children: pages,
+        children: _pages,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,

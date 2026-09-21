@@ -160,7 +160,7 @@ class EntryService {
         .insert(entry.toInsertJson())
         .select()
         .single();
-    return Entry.fromJson(data);
+    return Entry.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
   Future<Entry> updateEntry(Entry entry) async {
@@ -170,7 +170,7 @@ class EntryService {
         .eq('id', entry.id)
         .select()
         .single();
-    return Entry.fromJson(data);
+    return Entry.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
   Future<void> deleteEntry(String entryId) async {

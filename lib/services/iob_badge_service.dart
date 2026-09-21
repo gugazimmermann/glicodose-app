@@ -23,9 +23,9 @@ class IobBadgeService {
   })  : _entries = entries,
         _profile = profile;
 
-  static const _notificationId = 71001;
-  static const _legacyChannelId = 'iob_badge';
-  static const _channelId = 'iob_status';
+  static const notificationId = 71001;
+  static const legacyChannelId = 'iob_badge';
+  static const channelId = 'iob_status';
 
   final EntryService _entries;
   final ProfileService _profile;
@@ -78,7 +78,7 @@ class IobBadgeService {
       final profile = await _profile.fetchCurrent();
       final duration = profile?.insulinDurationHours ?? 4.0;
       if (duration <= 0) {
-        await _applyBadge(0);
+        await applyCount(0);
         return;
       }
 
@@ -91,7 +91,7 @@ class IobBadgeService {
         now: DateTime.now(),
       );
       final n = asWholeDose(snap.iobU);
-      await _applyBadge(n > 0 ? n : 0);
+      await applyCount(n > 0 ? n : 0);
     } catch (_) {
       // Ignore badge failures (unsupported launcher, offline, etc.).
     }
@@ -99,24 +99,33 @@ class IobBadgeService {
 
   Future<void> clear() async {
     try {
-      await _applyBadge(0);
+      await applyCount(0);
     } catch (_) {}
   }
 
-  Future<void> _applyBadge(int n) async {
-    try {
-      if (await AppBadgePlus.isSupported()) {
-        await AppBadgePlus.updateBadge(n);
-      }
-    } catch (_) {}
+  /// Updates launcher badge + ongoing status notification.
+  Future<void> applyCount(int n) async {
+    await _initNotifications();
+    await _applyBadge(n, _notifications);
+  }
 
-    // Notification fallback: required on Pixel/stock and several OEMs where
-    // launcher badge APIs are missing or no-ops.
-    await _syncNotification(n);
+  /// Same as [applyCount] but usable from a Workmanager isolate (no DI).
+  static Future<void> applyCountStandalone(int n) async {
+    final plugin = FlutterLocalNotificationsPlugin();
+    await _initNotificationsPlugin(plugin);
+    await _applyBadge(n, plugin);
   }
 
   Future<void> _initNotifications() async {
     if (_notificationsInitialized || kIsWeb) return;
+    await _initNotificationsPlugin(_notifications);
+    _notificationsInitialized = true;
+  }
+
+  static Future<void> _initNotificationsPlugin(
+    FlutterLocalNotificationsPlugin plugin,
+  ) async {
+    if (kIsWeb) return;
     try {
       const android =
           AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -125,44 +134,59 @@ class IobBadgeService {
         requestBadgePermission: true,
         requestSoundPermission: false,
       );
-      await _notifications.initialize(
+      await plugin.initialize(
         settings: const InitializationSettings(
           android: android,
           iOS: darwin,
           macOS: darwin,
         ),
       );
-      _notificationsInitialized = true;
     } catch (_) {
       // Keep going; AppBadgePlus path may still work.
     }
   }
 
-  Future<void> _syncNotification(int n) async {
-    if (kIsWeb || !_notificationsInitialized) return;
+  static Future<void> _applyBadge(
+    int n,
+    FlutterLocalNotificationsPlugin notifications,
+  ) async {
+    try {
+      if (await AppBadgePlus.isSupported()) {
+        await AppBadgePlus.updateBadge(n);
+      }
+    } catch (_) {}
+
+    await _syncNotification(n, notifications);
+  }
+
+  static Future<void> _syncNotification(
+    int n,
+    FlutterLocalNotificationsPlugin notifications,
+  ) async {
+    if (kIsWeb) return;
 
     if (n <= 0) {
-      await _notifications.cancel(id: _notificationId);
+      await notifications.cancel(id: notificationId);
       return;
     }
 
     // Drop any leftover from the previous low-importance channel id.
     if (!kIsWeb && Platform.isAndroid) {
       try {
-        await _notifications
+        await notifications
             .resolvePlatformSpecificImplementation<
                 AndroidFlutterLocalNotificationsPlugin>()
-            ?.deleteNotificationChannel(channelId: _legacyChannelId);
+            ?.deleteNotificationChannel(channelId: legacyChannelId);
       } catch (_) {}
     }
 
-    await _notifications.show(
-      id: _notificationId,
+    await notifications.show(
+      id: notificationId,
       title: '~$n U ativas',
       body: 'Insulina rápida ainda no organismo.',
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          _channelId,
+          channelId,
           'Insulina ativa (IOB)',
           channelDescription:
               'Mostra quantas unidades de insulina rápida ainda estão ativas.',

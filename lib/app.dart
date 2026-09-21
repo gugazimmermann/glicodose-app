@@ -16,6 +16,7 @@ import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/export_service.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
 import 'package:diabetes_app/services/iob_badge_service.dart';
+import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/librelinkup_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
@@ -34,6 +35,11 @@ class AppServices {
         support = SupportService(),
         export = const ExportService() {
     iobBadge = IobBadgeService(entries: entries, profile: profile);
+    iobLive = IobLiveController(
+      entries: entries,
+      profile: profile,
+      badge: iobBadge,
+    );
   }
 
   final AuthService auth;
@@ -45,6 +51,7 @@ class AppServices {
   final SupportService support;
   final ExportService export;
   late final IobBadgeService iobBadge;
+  late final IobLiveController iobLive;
 
   /// Bumped whenever entries are created/updated/deleted so History reloads.
   final ValueNotifier<int> entriesRevision = ValueNotifier<int>(0);
@@ -73,7 +80,6 @@ class DiabetesApp extends StatefulWidget {
 
 class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   StreamSubscription<AuthState>? _authSub;
-  Timer? _badgeTimer;
   bool _loggedIn = false;
   bool _showSplash = true;
 
@@ -94,7 +100,6 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     _authSub?.cancel();
-    _stopBadgeTimer();
     services.entriesRevision.removeListener(_onEntriesChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -112,11 +117,8 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   }
 
   void _onLoggedIn() {
-    unawaited(() async {
-      await services.iobBadge.ensureReady();
-      await services.iobBadge.refresh();
-    }());
-    _startBadgeTimer();
+    services.iobLive.start();
+    unawaited(services.iobLive.refreshFromNetwork());
     final userId = services.auth.currentUser?.id;
     if (userId != null) {
       unawaited(services.support.logIn(userId));
@@ -124,45 +126,27 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   }
 
   void _onLoggedOut() {
-    _stopBadgeTimer();
-    unawaited(services.iobBadge.clear());
+    unawaited(services.iobLive.clear());
     unawaited(services.support.logOut());
   }
 
   void _onEntriesChanged() {
     if (!_loggedIn) return;
-    unawaited(() async {
-      await services.iobBadge.ensureReady();
-      await services.iobBadge.refresh();
-    }());
-  }
-
-  void _startBadgeTimer() {
-    _stopBadgeTimer();
-    _badgeTimer = Timer.periodic(const Duration(minutes: 15), (_) {
-      if (_loggedIn) {
-        unawaited(services.iobBadge.refresh());
-      }
-    });
-  }
-
-  void _stopBadgeTimer() {
-    _badgeTimer?.cancel();
-    _badgeTimer = null;
+    unawaited(services.iobLive.refreshFromNetwork());
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _loggedIn) {
-      unawaited(() async {
-        await services.iobBadge.ensureReady();
-        await services.iobBadge.refresh();
-      }());
-      _startBadgeTimer();
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
-      _stopBadgeTimer();
+    if (!_loggedIn) return;
+    if (state == AppLifecycleState.resumed) {
+      // Ensure timer is running after process resume; refresh from network.
+      services.iobLive.start();
+      unawaited(services.iobLive.refreshFromNetwork());
+    } else if (state == AppLifecycleState.detached) {
+      services.iobLive.stop();
     }
+    // Keep ticking while paused so the status notification can update
+    // while the process is still alive.
   }
 
   @override

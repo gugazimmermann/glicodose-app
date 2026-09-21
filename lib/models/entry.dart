@@ -24,16 +24,19 @@ class Entry {
   final DateTime? createdAt;
 
   factory Entry.fromJson(Map<String, dynamic> json) {
+    final rawGpt = json['gpt_raw_response'];
     return Entry(
       id: json['id'] as String,
       userId: json['user_id'] as String,
       recordedAt: DateTime.parse(json['recorded_at'] as String),
-      glucoseMgdl: json['glucose_mgdl'] as int,
+      glucoseMgdl: (json['glucose_mgdl'] as num).round(),
       foodText: json['food_text'] as String?,
       foodImagePath: json['food_image_path'] as String?,
       recommendedInsulin: (json['recommended_insulin'] as num?)?.toDouble(),
       appliedInsulin: (json['applied_insulin'] as num?)?.toDouble(),
-      gptRawResponse: json['gpt_raw_response'] as Map<String, dynamic>?,
+      gptRawResponse: rawGpt == null
+          ? null
+          : Map<String, dynamic>.from(rawGpt as Map),
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -141,14 +144,13 @@ class InsulinRecommendation {
 
   factory InsulinRecommendation.fromJson(Map<String, dynamic> json) {
     return InsulinRecommendation(
-      carboidratosG: (json['carboidratos_g'] as num?)?.toDouble() ?? 0,
-      correcaoU: (json['correcao_u'] as num?)?.toDouble() ?? 0,
-      bolusComidaU: (json['bolus_comida_u'] as num?)?.toDouble() ?? 0,
-      insulinaRecomendadaU:
-          (json['insulina_recomendada_u'] as num?)?.toDouble() ??
-              (json['recommended_insulin'] as num?)?.toDouble() ??
-              0,
-      iobU: (json['iob_u'] as num?)?.toDouble() ?? 0,
+      carboidratosG: _finite(json['carboidratos_g']),
+      correcaoU: _finite(json['correcao_u']),
+      bolusComidaU: _finite(json['bolus_comida_u']),
+      insulinaRecomendadaU: _finite(
+        json['insulina_recomendada_u'] ?? json['recommended_insulin'],
+      ),
+      iobU: _finite(json['iob_u']),
       observacao: json['observacao'] as String?,
       source: (json['source'] as String?) ?? 'ai',
       metaMgdl: (json['meta_mgdl'] as num?)?.toInt(),
@@ -171,9 +173,16 @@ class InsulinRecommendation {
       carboidratosG: 0,
       correcaoU: 0,
       bolusComidaU: 0,
-      insulinaRecomendadaU: entry.recommendedInsulin ?? 0,
+      insulinaRecomendadaU: _finite(entry.recommendedInsulin),
       source: 'manual',
       raw: raw,
     );
   }
+}
+
+double _finite(Object? value, [double fallback = 0]) {
+  if (value is! num) return fallback;
+  final d = value.toDouble();
+  if (d.isNaN || d.isInfinite) return fallback;
+  return d;
 }

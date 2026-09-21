@@ -11,7 +11,7 @@ import 'package:diabetes_app/models/libre_glucose.dart';
 import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/brazil_time.dart';
-import 'package:diabetes_app/services/iob_service.dart';
+import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -40,17 +40,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final _foodController = TextEditingController();
   final _carbsController = TextEditingController();
   final _picker = ImagePicker();
-  final _iobService = const IobService();
 
   Uint8List? _photoBytes;
   String? _photoName;
-  IobSnapshot _iob = IobSnapshot.empty;
   bool _useAi = true;
   bool _calculating = false;
-  bool _loadingIob = true;
   bool _listening = false;
   bool _transcribing = false;
-  bool _iobFailed = false;
   bool _isSupporter = false;
   String? _error;
   String? _glucoseWarning;
@@ -61,15 +57,26 @@ class _HomeScreenState extends State<HomeScreen> {
   LibreGlucoseReading? _libreReading;
   StreamSubscription<LibreGlucoseReading?>? _libreSub;
 
+  IobLiveController get _iobLive => widget.services.iobLive;
+
   @override
   void initState() {
     super.initState();
-    _refreshIob();
+    _iobLive.snapshot.addListener(_onIobChanged);
+    _iobLive.loading.addListener(_onIobChanged);
+    _iobLive.failed.addListener(_onIobChanged);
+    unawaited(_loadSupporterFlag());
+    if (_iobLive.snapshot.value.iobU == 0 && !_iobLive.loading.value) {
+      unawaited(_iobLive.refreshFromNetwork());
+    }
     unawaited(_initLibre());
   }
 
   @override
   void dispose() {
+    _iobLive.snapshot.removeListener(_onIobChanged);
+    _iobLive.loading.removeListener(_onIobChanged);
+    _iobLive.failed.removeListener(_onIobChanged);
     _libreSub?.cancel();
     if (_listening) {
       widget.services.speech.cancelRecording();
@@ -78,6 +85,19 @@ class _HomeScreenState extends State<HomeScreen> {
     _foodController.dispose();
     _carbsController.dispose();
     super.dispose();
+  }
+
+  void _onIobChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadSupporterFlag() async {
+    try {
+      final profile = await widget.services.profile.fetchCurrent();
+      if (mounted) {
+        setState(() => _isSupporter = profile?.isSupporter ?? false);
+      }
+    } catch (_) {}
   }
 
   Future<void> _initLibre() async {
@@ -247,41 +267,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _refreshIob() async {
-    setState(() {
-      _loadingIob = true;
-      _iobFailed = false;
-    });
-    try {
-      final profile = await widget.services.profile.fetchCurrent();
-      final duration = profile?.insulinDurationHours ?? 4.0;
-      final since =
-          DateTime.now().subtract(Duration(hours: duration.ceil() + 1));
-      final entries = await widget.services.entries.listEntriesSince(since);
-      final snap = _iobService.computeIob(
-        recentEntries: entries,
-        durationHours: duration,
-        now: DateTime.now(),
-      );
-      if (mounted) {
-        setState(() {
-          _iob = snap;
-          _iobFailed = false;
-          _isSupporter = profile?.isSupporter ?? false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _iob = IobSnapshot.empty;
-          _iobFailed = true;
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _loadingIob = false);
-    }
-  }
-
   void _updateGlucoseWarning(String? raw) {
     final n = int.tryParse(raw?.trim() ?? '');
     String? warning;
@@ -337,11 +322,33 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _clearForm() {
-    _glucoseController.clear();
     _foodController.clear();
     _carbsController.clear();
     _photoBytes = null;
     _photoName = null;
+    _error = null;
+    _glucoseWarning = null;
+    _glucoseManuallyEdited = false;
+    _autoFilledGlucose = null;
+
+    final reading = _libreReading;
+    if (reading != null) {
+      final text = reading.glucoseMgdl.toString();
+      _glucoseController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      _autoFilledGlucose = text;
+      if (reading.glucoseMgdl > 0 && reading.glucoseMgdl < 70) {
+        _glucoseWarning =
+            'Glicose baixa (< 70). Considere tratar hipoglicemia antes do bolus.';
+      } else if (reading.glucoseMgdl > 300) {
+        _glucoseWarning =
+            'Glicose muito alta (> 300). Confira a leitura e siga sua orientação médica.';
+      }
+    } else {
+      _glucoseController.clear();
+    }
   }
 
   Future<void> _calculate() async {
@@ -373,7 +380,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      await _refreshIob();
+      await _iobLive.refreshFromNetwork();
+      final iobU = _iobLive.snapshot.value.iobU;
       final entryId = const Uuid().v4();
       String? imagePath;
 
@@ -395,7 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
           glucoseMgdl: glucose,
           localTime: BrazilTime.formatHm(brNow),
           timezone: BrazilTime.locationName,
-          iobU: _iob.iobU,
+          iobU: iobU,
           foodText: foodText.isEmpty ? null : foodText,
           foodImageUrl: imageUrl,
         );
@@ -409,7 +417,7 @@ class _HomeScreenState extends State<HomeScreen> {
           glucoseMgdl: glucose,
           carboidratosG: carbs,
           profile: profile,
-          iobU: _iob.iobU,
+          iobU: iobU,
         );
       }
 
@@ -424,11 +432,10 @@ class _HomeScreenState extends State<HomeScreen> {
         appliedInsulin: null,
         gptRawResponse: result.raw,
       );
-      widget.services.notifyEntriesChanged();
 
       if (!mounted) return;
 
-      final done = await Navigator.of(context).push<bool>(
+      await Navigator.of(context, rootNavigator: true).push<bool>(
         MaterialPageRoute(
           builder: (_) => DoseResultScreen(
             services: widget.services,
@@ -439,10 +446,9 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       if (!mounted) return;
-      if (done == true) {
-        setState(_clearForm);
-        await _refreshIob();
-      }
+      widget.services.notifyEntriesChanged();
+      setState(_clearForm);
+      await _iobLive.refreshFromNetwork();
     } catch (e) {
       if (mounted) setState(() => _error = userFacingError(e));
     } finally {
@@ -464,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
           ],
-          if (!_loadingIob && _iob.iobU > 0)
+          if (!_iobLive.loading.value && _iobLive.snapshot.value.iobU > 0)
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -480,7 +486,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Você ainda tem ~${formatWhole(_iob.iobU)} U ativas. '
+                      'Você ainda tem ~${formatWhole(_iobLive.snapshot.value.iobU)} U ativas. '
                       'A recomendação já desconta isso.',
                       style: const TextStyle(
                         color: Color(0xFFBF360C),
@@ -492,8 +498,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          if (!_loadingIob && _iob.iobU > 0) const SizedBox(height: 12),
-          if (_iobFailed) ...[
+          if (!_iobLive.loading.value && _iobLive.snapshot.value.iobU > 0)
+            const SizedBox(height: 12),
+          if (_iobLive.failed.value) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
