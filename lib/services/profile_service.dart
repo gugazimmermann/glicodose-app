@@ -1,4 +1,7 @@
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/app_time.dart';
+import 'package:diabetes_app/services/libre_alert_service.dart';
+import 'package:diabetes_app/services/theme_preference_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileService {
@@ -6,7 +9,17 @@ class ProfileService {
 
   final SupabaseClient _client;
 
-  Future<Profile?> fetchCurrent() async {
+  Future<void> _applyProfilePrefs(Profile profile, {bool applyTheme = true}) async {
+    AppTime.setLocation(profile.timezone);
+    if (applyTheme) {
+      await ThemePreferenceService.save(
+        ThemePreferenceService.decode(profile.theme),
+      );
+    }
+    await LibreAlertService.applyFromProfile(profile);
+  }
+
+  Future<Profile?> fetchCurrent({bool applyTheme = true}) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return null;
 
@@ -28,7 +41,9 @@ class ProfileService {
       if (data == null) return null;
     }
 
-    return Profile.fromJson(data);
+    final profile = Profile.fromJson(data);
+    await _applyProfilePrefs(profile, applyTheme: applyTheme);
+    return profile;
   }
 
   Future<Profile> upsert(Profile profile) async {
@@ -37,7 +52,9 @@ class ProfileService {
         .upsert(profile.toJson())
         .select()
         .single();
-    return Profile.fromJson(data);
+    final saved = Profile.fromJson(data);
+    await _applyProfilePrefs(saved);
+    return saved;
   }
 
   Future<Profile> acceptDisclaimer() async {

@@ -137,6 +137,10 @@ class EntryService {
     double? appliedInsulin,
     Map<String, dynamic>? gptRawResponse,
     String? entryId,
+    String? glucoseSource,
+    String? healthGlucoseUuid,
+    String? healthInsulinUuid,
+    String? healthMealClientId,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) {
@@ -153,6 +157,10 @@ class EntryService {
       recommendedInsulin: recommendedInsulin,
       appliedInsulin: appliedInsulin,
       gptRawResponse: gptRawResponse,
+      glucoseSource: glucoseSource,
+      healthGlucoseUuid: healthGlucoseUuid,
+      healthInsulinUuid: healthInsulinUuid,
+      healthMealClientId: healthMealClientId,
     );
 
     final data = await _client
@@ -173,7 +181,33 @@ class EntryService {
     return Entry.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  Future<void> deleteEntry(String entryId) async {
+  Future<void> deleteEntry(String entryId, {String? foodImagePath}) async {
+    final path = foodImagePath;
     await _client.from('entries').delete().eq('id', entryId);
+    if (path != null && path.isNotEmpty) {
+      try {
+        await _client.storage.from(_bucket).remove([path]);
+      } catch (_) {
+        // Best-effort: orphaned photos should not block delete.
+      }
+    }
+  }
+
+  /// Latest entry without applied insulin (user may have forgotten to confirm).
+  Future<Entry?> latestUnconfirmed({Duration within = const Duration(hours: 6)}) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return null;
+    final since = DateTime.now().toUtc().subtract(within);
+    final data = await _client
+        .from('entries')
+        .select()
+        .eq('user_id', userId)
+        .isFilter('applied_insulin', null)
+        .gte('recorded_at', since.toIso8601String())
+        .order('recorded_at', ascending: false)
+        .limit(1);
+    final rows = data as List;
+    if (rows.isEmpty) return null;
+    return Entry.fromJson(Map<String, dynamic>.from(rows.first as Map));
   }
 }

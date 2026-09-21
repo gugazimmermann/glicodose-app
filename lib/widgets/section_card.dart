@@ -20,40 +20,44 @@ class SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: AppColors.card,
+    final colors = AppColors.of(context);
+    return Material(
+      color: colors.card,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        side: BorderSide(color: colors.cardBorder),
       ),
-      padding: padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (title != null) ...[
-            Row(
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 22, color: iconColor ?? AppColors.primary),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Text(
-                    title!,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: padding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (title != null) ...[
+              Row(
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 22, color: iconColor ?? AppColors.primary),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      title!,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: colors.ink,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
+                ],
+              ),
+              const SizedBox(height: 14),
+            ],
+            child,
           ],
-          child,
-        ],
+        ),
       ),
     );
   }

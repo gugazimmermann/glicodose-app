@@ -20,6 +20,7 @@ class AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -37,18 +38,18 @@ class AppLogo extends StatelessWidget {
             style: TextStyle(
               fontSize: titleSize,
               fontWeight: FontWeight.w800,
-              color: AppColors.ink,
+              color: colors.ink,
               letterSpacing: -0.5,
             ),
           ),
           if (subtitle != null) ...[
-            const SizedBox(height: 6),
+            SizedBox(height: 6),
             Text(
               subtitle!,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
-                color: AppColors.muted,
+                color: colors.muted,
                 height: 1.35,
               ),
             ),
@@ -74,7 +75,7 @@ class AppBarLogoTitle extends StatelessWidget {
           height: 32,
           fit: BoxFit.contain,
         ),
-        const SizedBox(width: 10),
+        SizedBox(width: 10),
         Flexible(
           child: Text(
             title,

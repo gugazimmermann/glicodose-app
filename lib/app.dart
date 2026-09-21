@@ -12,46 +12,91 @@ import 'package:diabetes_app/screens/main_shell.dart';
 import 'package:diabetes_app/screens/profile_screen.dart';
 import 'package:diabetes_app/screens/splash_screen.dart';
 import 'package:diabetes_app/services/auth_service.dart';
+import 'package:diabetes_app/services/basal_service.dart';
+import 'package:diabetes_app/services/dose_reminder_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/export_service.dart';
+import 'package:diabetes_app/services/glicemia_service.dart';
+import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
 import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/librelinkup_service.dart';
+import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
+import 'package:diabetes_app/services/push_token_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
 import 'package:diabetes_app/services/support_service.dart';
+import 'package:diabetes_app/services/theme_preference_service.dart';
+import 'package:diabetes_app/services/widget_health_sync.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 
 class AppServices {
-  AppServices(SupabaseClient client)
-      : auth = AuthService(client),
-        profile = ProfileService(client),
-        entries = EntryService(client),
-        insulin = InsulinService(client),
-        speech = SpeechService(client),
-        libre = LibreLinkUpService(client),
-        support = SupportService(),
-        export = const ExportService() {
-    iobBadge = IobBadgeService(entries: entries, profile: profile);
-    iobLive = IobLiveController(
-      entries: entries,
+  factory AppServices(SupabaseClient client) {
+    final profile = ProfileService(client);
+    final entries = EntryService(client);
+    final badge = IobBadgeService(entries: entries, profile: profile);
+    return AppServices.compose(
+      auth: AuthService(client),
       profile: profile,
-      badge: iobBadge,
+      entries: entries,
+      basal: BasalService(client),
+      glicemias: GlicemiaService(client),
+      insulin: InsulinService(client),
+      speech: SpeechService(client),
+      libre: LibreLinkUpService(client),
+      support: SupportService(),
+      export: const ExportService(),
+      favorites: MealFavoritesService(),
+      reminders: DoseReminderService(),
+      healthPlatform: HealthPlatformService(),
+      pushTokens: PushTokenService(client),
+      iobBadge: badge,
+      iobLive: IobLiveController(
+        entries: entries,
+        profile: profile,
+        badge: badge,
+      ),
     );
   }
+
+  /// Wire arbitrary service instances (fakes in tests, real in production).
+  AppServices.compose({
+    required this.auth,
+    required this.profile,
+    required this.entries,
+    required this.basal,
+    required this.glicemias,
+    required this.insulin,
+    required this.speech,
+    required this.libre,
+    required this.support,
+    required this.export,
+    required this.favorites,
+    required this.reminders,
+    required this.healthPlatform,
+    required this.pushTokens,
+    required this.iobBadge,
+    required this.iobLive,
+  });
 
   final AuthService auth;
   final ProfileService profile;
   final EntryService entries;
+  final BasalService basal;
+  final GlicemiaService glicemias;
   final InsulinService insulin;
   final SpeechService speech;
   final LibreLinkUpService libre;
   final SupportService support;
   final ExportService export;
-  late final IobBadgeService iobBadge;
-  late final IobLiveController iobLive;
+  final MealFavoritesService favorites;
+  final DoseReminderService reminders;
+  final HealthPlatformService healthPlatform;
+  final PushTokenService pushTokens;
+  final IobBadgeService iobBadge;
+  final IobLiveController iobLive;
 
   /// Bumped whenever entries are created/updated/deleted so History reloads.
   final ValueNotifier<int> entriesRevision = ValueNotifier<int>(0);
@@ -123,11 +168,38 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
     if (userId != null) {
       unawaited(services.support.logIn(userId));
     }
+    unawaited(services.pushTokens.register());
+    unawaited(_syncBasalReminders());
+    unawaited(_syncHealthPrefToWidget());
+  }
+
+  Future<void> _syncHealthPrefToWidget() async {
+    try {
+      final profile = await services.profile.fetchCurrent(applyTheme: false);
+      if (profile == null) return;
+      await WidgetHealthSync.setEnabled(profile.healthSyncEnabled);
+    } catch (_) {}
+  }
+
+  Future<void> _syncBasalReminders() async {
+    try {
+      final profile = await services.profile.fetchCurrent(applyTheme: false);
+      if (profile == null) return;
+      await services.reminders.syncBasalFromProfile(
+        enabled: profile.basalReminderEnabled,
+        timesMinutes: profile.basalTimesMinutes,
+        timezone: profile.timezone,
+        insulinName: profile.basalInsulinName,
+        doseU: profile.basalDoseU,
+      );
+    } catch (_) {}
   }
 
   void _onLoggedOut() {
     unawaited(services.iobLive.clear());
     unawaited(services.support.logOut());
+    unawaited(services.pushTokens.unregister());
+    unawaited(services.reminders.cancelBasalReminders());
   }
 
   void _onEntriesChanged() {
@@ -142,6 +214,7 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
       // Ensure timer is running after process resume; refresh from network.
       services.iobLive.start();
       unawaited(services.iobLive.refreshFromNetwork());
+      unawaited(WidgetHealthSync.refresh(lookback: const Duration(hours: 12)));
     } else if (state == AppLifecycleState.detached) {
       services.iobLive.stop();
     }
@@ -151,23 +224,30 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'GlicoDose',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      home: _showSplash
-          ? SplashScreen(
-              onFinished: () {
-                if (!mounted) return;
-                setState(() => _showSplash = false);
-              },
-            )
-          : AuthGate(services: services),
-      routes: {
-        '/login': (_) => LoginScreen(services: services),
-        '/profile': (_) => ProfileScreen(services: services),
-        '/home': (_) => HomeScreen(services: services),
-        '/history': (_) => HistoryScreen(services: services),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemePreferenceService.mode,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          title: 'GlicoDose',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: themeMode,
+          home: _showSplash
+              ? SplashScreen(
+                  onFinished: () {
+                    if (!mounted) return;
+                    setState(() => _showSplash = false);
+                  },
+                )
+              : AuthGate(services: services),
+          routes: {
+            '/login': (_) => LoginScreen(services: services),
+            '/profile': (_) => ProfileScreen(services: services),
+            '/home': (_) => HomeScreen(services: services),
+            '/history': (_) => HistoryScreen(services: services),
+          },
+        );
       },
     );
   }
@@ -223,15 +303,16 @@ class _ProfileGateState extends State<ProfileGate> {
       future: _profileFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
+          final colors = AppColors.of(context);
           return Scaffold(
-            backgroundColor: AppColors.surface,
+            backgroundColor: colors.surface,
             body: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
-                  AppLogo(size: 88, showTitle: true, titleSize: 26),
-                  SizedBox(height: 24),
-                  SizedBox(
+                children: [
+                  const AppLogo(size: 88, showTitle: true, titleSize: 26),
+                  const SizedBox(height: 24),
+                  const SizedBox(
                     width: 28,
                     height: 28,
                     child: CircularProgressIndicator(

@@ -56,6 +56,10 @@ dependencies:
   workmanager: ^0.10.10
   flutter_foreground_task: ^11.0.3
   home_widget: ^0.10.0
+  pdf: ^3.13.1
+  health: ^13.3.2
+  firebase_core: ^4.4.0
+  firebase_messaging: ^16.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -110,6 +114,8 @@ flutter:
 
   assets:
     - images/glucosemeter.png
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

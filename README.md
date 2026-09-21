@@ -8,9 +8,14 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou
 
 - Dose híbrida: IA estima carboidratos (com **confiança** baixa/média/alta); fórmula do perfil − IOB calcula a insulina
 - Ajuste de carbs na tela de resultado e recálculo local
-- Avisos de hipoglicemia e dose 0 por IOB
-- Histórico com gráficos, exportação **CSV** e relatório para consulta
+- Favoritos de refeição e avisos de hipoglicemia / dose 0 por IOB
+- Insulina basal: registro separado (não entra no IOB rápido) + lembretes locais
+- Histórico com gráficos, exportação **CSV/PDF** e relatório para consulta
 - Linkar Sensor (LibreLinkUp) com glicose atual na Dose
+- Alertas de hipo/hiper/sensor parado via **push FCM** (cron LibreLinkUp)
+- Importação de glicose via **Health Connect** (Android) / **HealthKit** (iOS)
+- Widget de status na home (IOB / glicose) em Android e iOS
+- Fuso horário e tema (sistema/claro/escuro) no perfil, sincronizados no Supabase
 - Vínculo com médico por código de 6 caracteres
 - Apoiar (IAP via RevenueCat)
 
@@ -19,6 +24,7 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou
 - Flutter SDK
 - Projeto no [Supabase](https://supabase.com)
 - Chave da [OpenAI](https://platform.openai.com)
+- Projeto [Firebase](https://firebase.google.com) (FCM) com `google-services.json` / `GoogleService-Info.plist`
 - CLI do Supabase (para deploy das funções)
 
 ## 1. Banco e Storage
@@ -26,9 +32,18 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou
 No SQL Editor do Supabase (ou `supabase db push` a partir desta pasta), execute as migrations na ordem:
 
 1. [`001_init.sql`](supabase/migrations/001_init.sql) … até
-2. [`013_librelinkup.sql`](supabase/migrations/013_librelinkup.sql)
+2. [`019_libre_alert_same_sample.sql`](supabase/migrations/019_libre_alert_same_sample.sql)
 
-A **013** adiciona credenciais LibreLinkUp, tabela `glicemias` e Realtime.
+Resumo das migrations recentes:
+
+| Migration | Conteúdo |
+| --- | --- |
+| `014` | `profiles.timezone` (IANA) |
+| `015` | `profiles.theme` (`system` / `light` / `dark`) |
+| `016` | Alertas Libre + `device_tokens` + estado de debounce |
+| `017` | Insulina basal (`basal_doses` + campos no perfil) |
+| `018` | Sync Health Connect / HealthKit (metadados em `entries`) |
+| `019` | Debounce de alerta no mesmo sample Libre |
 
 ## 2. Edge Functions
 
@@ -36,9 +51,14 @@ A **013** adiciona credenciais LibreLinkUp, tabela `glicemias` e Realtime.
 supabase login
 supabase link --project-ref SEU_PROJECT_REF
 supabase secrets set OPENAI_API_KEY=sk-sua-chave
+supabase secrets set LIBRELINKUP_CRON_SECRET='um-segredo-longo'
+supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat service-account.json)"
 supabase functions deploy recommend-insulin
 supabase functions deploy transcribe-food
 supabase functions deploy revenuecat-webhook
+supabase functions deploy librelinkup-connect
+supabase functions deploy librelinkup-sync
+supabase functions deploy librelinkup-cron
 ```
 
 | Função | Papel |
@@ -46,6 +66,8 @@ supabase functions deploy revenuecat-webhook
 | `recommend-insulin` | Carbs (GPT-4o + TACO / Vision) + confiança; dose = fórmula do perfil (`dose_step`) − IOB; log em `ai_usage_logs` |
 | `transcribe-food` | Áudio → texto (Whisper, `language: pt`) |
 | `revenuecat-webhook` | Espelha status de apoiador (IAP) em `profiles` |
+| `librelinkup-connect` / `sync` | Credenciais e sync sob demanda do LibreLinkUp |
+| `librelinkup-cron` | Sync periódico + push FCM de alertas hipo/hiper/stale |
 
 ## 3. Variáveis de ambiente (`.env`)
 
@@ -65,7 +87,13 @@ flutter pub get
 flutter run --dart-define-from-file=.env
 ```
 
-**Não** coloque `OPENAI_API_KEY` no `.env` do app — só no Supabase.
+**Não** coloque `OPENAI_API_KEY` nem a service account do Firebase no `.env` do app — só nos secrets do Supabase.
+
+### Firebase / FCM
+
+1. Gere os arquivos do app no Firebase Console (ou `flutterfire configure`).
+2. Confirme `android/app/google-services.json` e `ios/Runner/GoogleService-Info.plist`.
+3. No cron: `FIREBASE_SERVICE_ACCOUNT_JSON` (conta de serviço do mesmo projeto).
 
 ### Apoio (IAP)
 
@@ -79,11 +107,12 @@ supabase functions deploy revenuecat-webhook
 ## Fluxo do usuário
 
 1. Cadastro / login (Supabase Auth)
-2. Perfil: tipo de diabetes, meta dia/noite, FSI, I:C, insulina, passo de dose, duração IOB
-3. Dose: glicose + alimento (texto/foto/**Falar**) → calcular
-4. Revisar carbs (confiança IA), confirmar insulina aplicada
-5. Histórico: lista, gráficos, exportar CSV/relatório
-6. Perfil: Linkar Sensor, Apoiar, sair
+2. Perfil: tipo de diabetes, meta dia/noite, FSI, I:C, insulina rápida, basal, fuso, tema, alertas Libre, Health
+3. Dose: glicose (manual / Libre / Health) + alimento (texto/foto/**Falar**/favorito) → calcular
+4. Revisar carbs (confiança IA), confirmar insulina aplicada; registrar basal se for o caso
+5. Histórico: lista, gráficos, exportar CSV/PDF
+6. Widget / badge / foreground task: IOB ao vivo
+7. Perfil: Linkar Sensor, Apoiar, sair
 
 ## Roadmap
 
@@ -96,17 +125,18 @@ Specs em [`docs/releases/`](docs/releases/).
 | R2 gráficos | Feito |
 | R3 export CSV/relatório | Feito |
 | R4 LibreLinkUp (Linkar Sensor) | Feito |
+| R5 timezone, tema, basal, alertas FCM, Health, widget iOS | Feito |
 
 ## Estrutura
 
 ```
 lib/
   config/          # Supabase + RevenueCat
-  models/          # Profile, Entry, InsulinRecommendation, LibreGlucose
-  services/        # Auth, Entry, Insulin, IOB, LibreLinkUp, Export, Support…
-  screens/         # Dose, Histórico, Perfil, Linkar Sensor, Apoiar…
+  models/          # Profile, Entry, BasalDose, InsulinRecommendation, LibreGlucose
+  services/        # Auth, Entry, Insulin, IOB, Basal, Libre, Health, FCM, Export, Widget…
+  screens/         # Dose, Histórico, Perfil, Health import, Linkar Sensor, Apoiar…
 supabase/
-  migrations/      # 001 … 013
+  migrations/      # 001 … 019
   functions/       # recommend-insulin, transcribe-food, revenuecat-webhook, librelinkup-*
 docs/
   iap-store-setup.md

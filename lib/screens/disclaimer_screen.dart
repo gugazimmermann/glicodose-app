@@ -42,6 +42,7 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
       appBar: AppBar(
         title: const AppBarLogoTitle(title: 'Aviso importante'),
@@ -51,10 +52,10 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            const Center(child: AppLogo(size: 80)),
-            const SizedBox(height: 20),
+            Center(child: AppLogo(size: 80)),
+            SizedBox(height: 20),
             SectionCard(
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -62,7 +63,7 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
+                      color: colors.ink,
                     ),
                   ),
                   SizedBox(height: 12),
@@ -74,7 +75,7 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
                     'definido com o seu profissional. Em emergência, procure '
                     'atendimento médico imediatamente.',
                     style: TextStyle(
-                      color: AppColors.muted,
+                      color: colors.muted,
                       height: 1.45,
                       fontSize: 14,
                     ),
@@ -82,7 +83,7 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             CheckboxListTile(
               value: _accepted,
               onChanged: _saving
@@ -96,17 +97,17 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
               ),
             ),
             if (_error != null) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 _error!,
                 style: const TextStyle(color: AppColors.accent),
               ),
             ],
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             FilledButton(
               onPressed: (_accepted && !_saving) ? _continue : null,
               child: _saving
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(

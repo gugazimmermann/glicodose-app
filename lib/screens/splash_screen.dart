@@ -77,8 +77,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
-      backgroundColor: AppColors.surface,
+      backgroundColor: colors.surface,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -101,12 +102,12 @@ class _SplashScreenState extends State<SplashScreen>
               opacity: _titleOpacity,
               child: SlideTransition(
                 position: _titleSlide,
-                child: const Text(
+                child: Text(
                   'GlicoDose',
                   style: TextStyle(
                     fontSize: _titleSize,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.ink,
+                    color: colors.ink,
                     letterSpacing: -0.5,
                   ),
                 ),

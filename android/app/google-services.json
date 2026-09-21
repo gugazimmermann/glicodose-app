@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1090715856317",
+    "project_id": "glicodose1",
+    "storage_bucket": "glicodose1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1090715856317:android:59c82279a59e0797a376d4",
+        "android_client_info": {
+          "package_name": "com.diabetes.diabetes_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwhAa-hdTdK7gBh4JpMh-3n-ZvTr4eDyQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

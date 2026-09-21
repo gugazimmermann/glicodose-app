@@ -48,6 +48,7 @@ class LibreLinkUpService {
           'glucose_mgdl, trend, is_high, is_low, recorded_at, external_id',
         )
         .eq('user_id', userId)
+        .eq('source', 'librelinkup')
         .order('recorded_at', ascending: false)
         .limit(1)
         .maybeSingle();
@@ -68,10 +69,13 @@ class LibreLinkUpService {
         .stream(primaryKey: ['id'])
         .eq('user_id', userId)
         .order('recorded_at', ascending: false)
-        .limit(1)
         .map((rows) {
-      if (rows.isEmpty) return null;
-      return LibreGlucoseReading.fromJson(Map<String, dynamic>.from(rows.first));
+      for (final row in rows) {
+        final m = Map<String, dynamic>.from(row);
+        if (m['source'] != null && m['source'] != 'librelinkup') continue;
+        return LibreGlucoseReading.fromJson(m);
+      }
+      return null;
     });
   }
 

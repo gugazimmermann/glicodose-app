@@ -16,9 +16,9 @@ class BolusCalculator {
     double iobU = 0,
     String? observacao,
     String source = 'local',
-    tz.TZDateTime? nowBr,
+    tz.TZDateTime? now,
   }) {
-    final effective = targetResolver.resolve(profile, nowBr: nowBr);
+    final effective = targetResolver.resolve(profile, now: now);
     final target = effective.mgdl.toDouble();
     final isf = profile.isfMgdlPerU ?? 50;
     final ic = profile.icRatio ?? 10;

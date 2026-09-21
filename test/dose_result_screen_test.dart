@@ -66,6 +66,8 @@ void main() {
     expect(find.text('Resultado da dose'), findsOneWidget);
     expect(find.text('5'), findsWidgets);
     expect(find.text('Insulina recomendada'), findsOneWidget);
+    expect(find.textContaining('Confiança nos carbs'), findsOneWidget);
     expect(find.text('Nova dose'), findsOneWidget);
+    expect(find.text('Recalcular com estes carbs'), findsOneWidget);
   });
 }

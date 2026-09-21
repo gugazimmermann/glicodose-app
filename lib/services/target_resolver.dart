@@ -1,5 +1,5 @@
 import 'package:diabetes_app/models/profile.dart';
-import 'package:diabetes_app/services/brazil_time.dart';
+import 'package:diabetes_app/services/app_time.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 class EffectiveTarget {
@@ -38,9 +38,9 @@ class TargetResolver {
     return minuteOfDay >= nightStartMinute || minuteOfDay <= nightEndMinute;
   }
 
-  EffectiveTarget resolve(Profile profile, {tz.TZDateTime? nowBr}) {
-    final when = nowBr ?? BrazilTime.now();
-    final minute = BrazilTime.minuteOfDay(when);
+  EffectiveTarget resolve(Profile profile, {tz.TZDateTime? now}) {
+    final when = now ?? AppTime.now();
+    final minute = AppTime.minuteOfDay(when);
     final night = isNightWindow(
       minuteOfDay: minute,
       nightStartMinute: profile.nightStartMinute,
@@ -52,7 +52,7 @@ class TargetResolver {
       mgdl: night ? nightTarget : dayTarget,
       isNight: night,
       minuteOfDay: minute,
-      timeLabel: BrazilTime.formatHm(when),
+      timeLabel: AppTime.formatHm(when),
     );
   }
 }

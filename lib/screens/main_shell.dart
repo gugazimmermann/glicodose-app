@@ -86,6 +86,12 @@ class _MainShellState extends State<MainShell> {
           profile: profile,
           entries: entries,
         );
+      } else if (value == 'pdf') {
+        final profile = await widget.services.profile.fetchCurrent();
+        await widget.services.export.sharePdfReport(
+          profile: profile,
+          entries: entries,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -108,8 +114,12 @@ class _MainShellState extends State<MainShell> {
               itemBuilder: (context) => const [
                 PopupMenuItem(value: 'csv', child: Text('Exportar CSV')),
                 PopupMenuItem(
+                  value: 'pdf',
+                  child: Text('Exportar PDF'),
+                ),
+                PopupMenuItem(
                   value: 'report',
-                  child: Text('Relatório para consulta'),
+                  child: Text('Relatório texto'),
                 ),
               ],
             ),

@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
+import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -28,8 +32,12 @@ class DoseResultScreen extends StatefulWidget {
 
 class _DoseResultScreenState extends State<DoseResultScreen> {
   late final TextEditingController _appliedController;
+  late final TextEditingController _carbsController;
   late Entry _entry;
+  late InsulinRecommendation _rec;
+  Profile? _profile;
   bool _saving = false;
+  bool _recalculating = false;
   String? _error;
 
   bool get _confirmed => _entry.appliedInsulin != null;
@@ -38,17 +46,118 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
   void initState() {
     super.initState();
     _entry = widget.entry;
+    _rec = widget.recommendation;
     _appliedController = TextEditingController(
       text: formatWhole(
-        _entry.appliedInsulin ?? widget.recommendation.insulinaRecomendadaU,
+        _entry.appliedInsulin ?? _rec.insulinaRecomendadaU,
       ),
     );
+    _carbsController = TextEditingController(
+      text: formatWhole(_rec.carboidratosG),
+    );
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await widget.services.profile.fetchCurrent();
+      if (mounted) setState(() => _profile = profile);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _appliedController.dispose();
+    _carbsController.dispose();
     super.dispose();
+  }
+
+  Color _confidenceColor(String? c) {
+    switch (c) {
+      case 'alta':
+        return AppColors.success;
+      case 'baixa':
+        return AppColors.warning;
+      default:
+        return AppColors.primary;
+    }
+  }
+
+  Future<void> _recalculateCarbs() async {
+    final carbs = parseDecimal(_carbsController.text);
+    if (carbs == null || carbs < 0) {
+      setState(() => _error = 'Informe os carboidratos em gramas.');
+      return;
+    }
+    final profile = _profile;
+    if (profile == null || !profile.isComplete) {
+      setState(() => _error = 'Perfil incompleto. Atualize sua prescrição.');
+      return;
+    }
+
+    setState(() {
+      _recalculating = true;
+      _error = null;
+    });
+
+    try {
+      final next = widget.services.insulin.recalculateWithCarbs(
+        glucoseMgdl: _entry.glucoseMgdl,
+        carboidratosG: carbs,
+        profile: profile,
+        iobU: _rec.iobU,
+        confianca: _rec.confianca,
+        observacao: 'Recálculo local após ajuste de carboidratos.',
+      );
+      final updated = await widget.services.entries.updateEntry(
+        _entry.copyWith(
+          recommendedInsulin: next.insulinaRecomendadaU,
+        ).copyWithRaw(next.raw),
+      );
+      if (!mounted) return;
+      setState(() {
+        _rec = next;
+        _entry = updated;
+        if (!_confirmed) {
+          _appliedController.text = formatWhole(next.insulinaRecomendadaU);
+        }
+      });
+      widget.services.notifyEntriesChanged();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = userFacingError(e));
+    } finally {
+      if (mounted) setState(() => _recalculating = false);
+    }
+  }
+
+  Future<void> _writeHealthAfterConfirm(double applied) async {
+    try {
+      final profile =
+          await widget.services.profile.fetchCurrent(applyTheme: false);
+      if (profile?.healthSyncEnabled != true) return;
+      final health = widget.services.healthPlatform;
+      final at = _entry.recordedAt;
+      if (_rec.carboidratosG > 0) {
+        final mealId = _entry.healthMealClientId ?? _entry.id;
+        final ok = await health.writeMealCarbs(
+          carbohydratesG: _rec.carboidratosG,
+          recordedAt: at,
+          clientRecordId: mealId,
+          name: _entry.foodText,
+        );
+        if (ok && _entry.healthMealClientId == null) {
+          await widget.services.entries.updateEntry(
+            _entry.copyWith(healthMealClientId: mealId),
+          );
+        }
+      }
+      await health.writeInsulin(
+        units: applied,
+        recordedAt: at,
+        basal: false,
+      );
+    } catch (_) {}
   }
 
   Future<void> _confirmApplied() async {
@@ -69,13 +178,25 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
         _entry.copyWith(appliedInsulin: applied),
       );
       widget.services.notifyEntriesChanged();
+      await widget.services.iobLive.refreshFromNetwork();
+      await widget.services.reminders.schedulePostBolusCheck();
+      final food = _entry.foodText?.trim();
+      if (food != null && food.isNotEmpty) {
+        await widget.services.favorites.add(
+          MealFavorite(text: food, carbsG: _rec.carboidratosG),
+        );
+      }
+
+      // Best-effort Health write-back (insulin iOS-only; carbs both).
+      unawaited(_writeHealthAfterConfirm(applied));
+
       if (!mounted) return;
       setState(() => _entry = updated);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             wasUnconfirmed
-                ? 'Dose confirmada e salva no histórico'
+                ? 'Dose confirmada. Lembrete de checagem em 2 h.'
                 : 'Dose aplicada atualizada',
           ),
         ),
@@ -99,10 +220,12 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rec = widget.recommendation;
-    final sourceLabel = rec.source == 'manual'
+    final colors = AppColors.of(context);
+    final sourceLabel = _rec.source == 'manual'
         ? 'Cálculo local (sua fórmula)'
-        : 'Estimativa de carbs (IA) + sua fórmula';
+        : _rec.source == 'local_adjust'
+            ? 'Recálculo local (carbs ajustados)'
+            : 'Estimativa de carbs (IA) + sua fórmula';
 
     return Scaffold(
       appBar: AppBar(
@@ -123,7 +246,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     TextSpan(
                       children: [
                         TextSpan(
-                          text: formatWhole(rec.insulinaRecomendadaU),
+                          text: formatWhole(_rec.insulinaRecomendadaU),
                           style: const TextStyle(
                             fontSize: 52,
                             fontWeight: FontWeight.w800,
@@ -131,37 +254,65 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                             height: 1,
                           ),
                         ),
-                        const TextSpan(
+                        TextSpan(
                           text: ' U',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.muted,
+                            color: colors.muted,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Center(
                   child: Text(
                     sourceLabel,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: AppColors.muted,
+                      color: colors.muted,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                if (rec.metaDisplay != null) ...[
-                  const SizedBox(height: 6),
+                if (_rec.confianca != null) ...[
+                  SizedBox(height: 10),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _confidenceColor(_rec.confianca)
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _confidenceColor(_rec.confianca)
+                              .withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Text(
+                        'Confiança nos carbs: ${_rec.confiancaLabel}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _confidenceColor(_rec.confianca),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                if (_rec.metaDisplay != null) ...[
+                  SizedBox(height: 6),
                   Center(
                     child: Text(
-                      rec.horarioBr != null
-                          ? '${rec.metaDisplay!} · ${rec.horarioBr} (Brasília)'
-                          : rec.metaDisplay!,
+                      _rec.horarioBr != null
+                          ? '${_rec.metaDisplay!} · ${_rec.horarioBr}'
+                          : _rec.metaDisplay!,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 13,
@@ -171,11 +322,11 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.warningSoft,
+                    color: colors.warningSoft,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFFFFCC80)),
                   ),
@@ -186,10 +337,10 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                         color: AppColors.warning,
                         size: 22,
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'IOB descontado: ${formatWhole(rec.iobU)} U '
+                          'IOB descontado: ${formatWhole(_rec.iobU)} U '
                           '(insulina ainda ativa)',
                           style: const TextStyle(
                             fontSize: 14,
@@ -202,36 +353,63 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 Row(
                   children: [
                     _MetricChip(
                       label: 'Carbs',
-                      value: '${formatWhole(rec.carboidratosG)} g',
+                      value: '${formatWhole(_rec.carboidratosG)} g',
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     _MetricChip(
                       label: 'Correção',
-                      value: '${formatWhole(rec.correcaoU)} U',
+                      value: '${formatWhole(_rec.correcaoU)} U',
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     _MetricChip(
                       label: 'Comida',
-                      value: '${formatWhole(rec.bolusComidaU)} U',
+                      value: '${formatWhole(_rec.bolusComidaU)} U',
                     ),
                   ],
                 ),
-                if (rec.observacao != null && rec.observacao!.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                if (_rec.observacao != null && _rec.observacao!.isNotEmpty) ...[
+                  SizedBox(height: 12),
                   Text(
-                    rec.observacao!,
-                    style: const TextStyle(
-                      color: AppColors.muted,
+                    _rec.observacao!,
+                    style: TextStyle(
+                      color: colors.muted,
                       fontSize: 13,
                     ),
                   ),
                 ],
-                const SizedBox(height: 16),
+                if (!widget.fromHistory || !_confirmed) ...[
+                  SizedBox(height: 16),
+                  TextFormField(
+                    controller: _carbsController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [decimalInputFormatter],
+                    decoration: const InputDecoration(
+                      labelText: 'Ajustar carboidratos (g)',
+                      helperText: 'Recalcula a dose com sua fórmula, sem IA',
+                      prefixIcon: Icon(Icons.restaurant_outlined),
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _recalculating ? null : _recalculateCarbs,
+                    icon: _recalculating
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                    label: const Text('Recalcular com estes carbs'),
+                  ),
+                ],
+                SizedBox(height: 16),
                 TextFormField(
                   controller: _appliedController,
                   keyboardType: const TextInputType.numberWithOptions(
@@ -246,14 +424,14 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     prefixIcon: const Icon(Icons.edit_outlined),
                   ),
                 ),
-                const SizedBox(height: 14),
+                SizedBox(height: 14),
                 FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primaryDark,
                   ),
                   onPressed: _saving ? null : _confirmApplied,
                   child: _saving
-                      ? const SizedBox(
+                      ? SizedBox(
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
@@ -271,19 +449,19 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
             ),
           ),
           if (_error != null) ...[
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
             Text(
               _error!,
               style: const TextStyle(color: AppColors.error, fontSize: 13),
             ),
           ],
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           if (_confirmed) ...[
             FilledButton.tonal(
               onPressed: _goHistory,
               child: const Text('Ver no histórico'),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
           ],
           if (!widget.fromHistory)
             OutlinedButton(
@@ -295,7 +473,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Voltar'),
             ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Text(
             _confirmed
                 ? 'Dose registrada como aplicada. Ela entra no cálculo de IOB.'
@@ -303,7 +481,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 12,
-              color: AppColors.muted.withValues(alpha: 0.95),
+              color: colors.muted.withValues(alpha: 0.95),
               height: 1.35,
             ),
           ),
@@ -321,24 +499,25 @@ class _MetricChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Column(
           children: [
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.muted,
+                color: colors.muted,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 2),
+            SizedBox(height: 2),
             Text(
               value,
               style: const TextStyle(
@@ -350,6 +529,23 @@ class _MetricChip extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+extension on Entry {
+  Entry copyWithRaw(Map<String, dynamic>? raw) {
+    return Entry(
+      id: id,
+      userId: userId,
+      recordedAt: recordedAt,
+      glucoseMgdl: glucoseMgdl,
+      foodText: foodText,
+      foodImagePath: foodImagePath,
+      recommendedInsulin: recommendedInsulin,
+      appliedInsulin: appliedInsulin,
+      gptRawResponse: raw ?? gptRawResponse,
+      createdAt: createdAt,
     );
   }
 }

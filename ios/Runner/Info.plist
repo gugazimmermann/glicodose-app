@@ -51,6 +51,8 @@
 		<true/>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>
+		<key>UIUserInterfaceStyle</key>
+		<string>Automatic</string>
 		<key>UIMainStoryboardFile</key>
 		<string>Main</string>
 		<key>UISupportedInterfaceOrientations</key>
@@ -72,9 +74,14 @@
 		<string>Precisamos da galeria para selecionar a foto do alimento ou rótulo.</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Precisamos do microfone para descrever o alimento por voz.</string>
+		<key>NSHealthShareUsageDescription</key>
+		<string>O GlicoDose lê glicemias do Apple Health para preencher a dose e o histórico.</string>
+		<key>NSHealthUpdateUsageDescription</key>
+		<string>O GlicoDose registra glicemias, carboidratos e insulina (bolus/basal) no Apple Health quando você autorizar.</string>
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>fetch</string>
+			<string>remote-notification</string>
 		</array>
 		<key>BGTaskSchedulerPermittedIdentifiers</key>
 		<array>

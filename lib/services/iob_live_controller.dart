@@ -11,6 +11,7 @@ import 'package:diabetes_app/services/iob_foreground_task.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
+import 'package:diabetes_app/services/widget_libre_sync.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
 /// Owns live IOB state: network refresh, 1-minute local ticks, badge sync,
@@ -168,24 +169,42 @@ class IobLiveController {
       now: DateTime.now(),
     );
     await _publish(snap);
+    // iOS has no FGS: refresh Libre on the same 1-min timer while the app is alive.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      final libreOn = await StatusHomeWidgetService.isLibreConnected();
+      if (libreOn) {
+        unawaited(WidgetLibreSync.refresh(showSyncing: false));
+      }
+    }
   }
 
   Future<void> _publish(IobSnapshot snap) async {
     snapshot.value = snap;
     final n = asWholeDose(snap.iobU);
     unawaited(StatusHomeWidgetService.publishIobTick(n));
-    if (n > 0) {
-      final fgsOk = await IobForegroundTask.ensureRunning(n);
+    final libreOn = await StatusHomeWidgetService.isLibreConnected();
+    if (n > 0 || libreOn) {
+      final fgsOk = await IobForegroundTask.ensureRunningForWidget(iobU: n);
       // When FGS is up it owns the status notification (with showBadge).
       // If FGS failed to start, fall back to the local ongoing notification
       // so the launcher still gets a badge/dot via Notification.number.
       await _badge.applyCount(n, skipNotification: fgsOk);
-      await IobBackground.ensureScheduled();
+      if (n > 0) {
+        await IobBackground.ensureScheduled();
+      } else {
+        await IobBackground.cancel();
+      }
     } else {
       await IobForegroundTask.stop();
       await _badge.applyCount(0);
       await IobBackground.cancel();
     }
+  }
+
+  /// Keep the 1-min widget sync alive after Libre connect (even with IOB 0).
+  Future<void> ensureWidgetRefreshRunning() async {
+    final n = asWholeDose(snapshot.value.iobU);
+    await IobForegroundTask.ensureRunningForWidget(iobU: n);
   }
 
   void dispose() {

@@ -37,9 +37,10 @@ class IobBackground {
     final snap = await IobCache.recompute(now: now);
     final n = asWholeDose(snap.iobU);
     await StatusHomeWidgetService.publishIobTick(n);
-    if (n > 0) {
+    final libreOn = await StatusHomeWidgetService.isLibreConnected();
+    if (n > 0 || libreOn) {
       IobForegroundTask.init();
-      await IobForegroundTask.ensureRunning(n);
+      await IobForegroundTask.ensureRunningForWidget(iobU: n);
     } else {
       await IobForegroundTask.stop();
       await cancel();

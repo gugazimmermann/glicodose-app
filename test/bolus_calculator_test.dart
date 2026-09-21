@@ -1,14 +1,16 @@
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/bolus_calculator.dart';
-import 'package:diabetes_app/services/brazil_time.dart';
+import 'package:diabetes_app/services/target_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 void main() {
-  BrazilTime.ensureInitialized();
+  AppTime.ensureInitialized();
+  AppTime.setLocation(AppTime.defaultLocationName);
 
   const calc = BolusCalculator();
-  final location = BrazilTime.location;
+  final location = AppTime.location;
 
   final profile = Profile(
     id: 'u1',
@@ -37,7 +39,7 @@ void main() {
       glucoseMgdl: 210,
       carboidratosG: 0,
       profile: profile,
-      nowBr: at(14, 0),
+      now: at(14, 0),
     );
     // (210-110)/50 = 2
     expect(r.metaMgdl, 110);
@@ -51,7 +53,7 @@ void main() {
       glucoseMgdl: 210,
       carboidratosG: 0,
       profile: profile,
-      nowBr: at(22, 0),
+      now: at(22, 0),
     );
     // (210-120)/50 = 1.8 -> 2
     expect(r.metaMgdl, 120);
@@ -65,7 +67,7 @@ void main() {
       glucoseMgdl: 110,
       carboidratosG: 45,
       profile: profile,
-      nowBr: at(12, 0),
+      now: at(12, 0),
     );
     // 45/10 = 4.5 -> 5
     expect(r.correcaoU, 0);
@@ -79,7 +81,7 @@ void main() {
       carboidratosG: 20,
       profile: profile,
       iobU: 10,
-      nowBr: at(12, 0),
+      now: at(12, 0),
     );
     // correcao 2 + comida 2 = 4 - 10 => 0
     expect(r.insulinaRecomendadaU, 0);
@@ -91,11 +93,36 @@ void main() {
       glucoseMgdl: 260,
       carboidratosG: 50,
       profile: p,
-      nowBr: at(12, 0),
+      now: at(12, 0),
     );
     // correcao (260-110)/150 = 1; comida 50/25 = 2; total 3
     expect(r.correcaoU, 1);
     expect(r.bolusComidaU, 2);
     expect(r.insulinaRecomendadaU, 3);
+  });
+
+  test('same UTC instant can flip day/night when timezone changes', () {
+    const resolver = TargetResolver();
+    // 2026-09-16 23:00 UTC = 20:00 Sao Paulo (night) and 19:00 New York (day
+    // if night starts at 20:00).
+    final utc = DateTime.utc(2026, 9, 16, 23, 0);
+
+    AppTime.setLocation('America/Sao_Paulo');
+    final sp = resolver.resolve(
+      profile,
+      now: AppTime.fromUtc(utc),
+    );
+    expect(sp.isNight, isTrue);
+    expect(sp.mgdl, 120);
+
+    AppTime.setLocation('America/New_York');
+    final ny = resolver.resolve(
+      profile,
+      now: AppTime.fromUtc(utc),
+    );
+    expect(ny.isNight, isFalse);
+    expect(ny.mgdl, 110);
+
+    AppTime.setLocation(AppTime.defaultLocationName);
   });
 }

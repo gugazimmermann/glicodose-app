@@ -64,17 +64,45 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _forgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _error = 'Informe um e-mail válido para redefinir a senha.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await widget.services.auth.resetPassword(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Se o e-mail existir, enviamos um link para redefinir a senha.',
+          ),
+        ),
+      );
+    } catch (e) {
+      setState(() => _error = userFacingError(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
       body: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
               Color(0xFFD6E8F7),
-              AppColors.surface,
+              colors.surface,
               Colors.white,
             ],
             stops: [0, 0.45, 1],
@@ -97,30 +125,30 @@ class _LoginScreenState extends State<LoginScreen> {
                         titleSize: 32,
                         subtitle: 'Glicose e estimativa de dose',
                       ),
-                      const SizedBox(height: 28),
+                      SizedBox(height: 28),
                       SectionCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Text(
                               _isLogin ? 'Entrar' : 'Criar conta',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.ink,
+                                color: colors.ink,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            SizedBox(height: 4),
                             Text(
                               _isLogin
                                   ? 'Acesse sua conta para registrar doses'
                                   : 'Cadastre-se para começar',
-                              style: const TextStyle(
-                                color: AppColors.muted,
+                              style: TextStyle(
+                                color: colors.muted,
                                 fontSize: 14,
                               ),
                             ),
-                            const SizedBox(height: 20),
+                            SizedBox(height: 20),
                             TextFormField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
@@ -139,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 14),
+                            SizedBox(height: 14),
                             TextFormField(
                               controller: _passwordController,
                               obscureText: _obscure,
@@ -168,7 +196,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               },
                             ),
                             if (_error != null) ...[
-                              const SizedBox(height: 14),
+                              SizedBox(height: 14),
                               Text(
                                 _error!,
                                 style: const TextStyle(
@@ -177,11 +205,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ],
-                            const SizedBox(height: 20),
+                            SizedBox(height: 20),
                             FilledButton(
                               onPressed: _loading ? null : _submit,
                               child: _loading
-                                  ? const SizedBox(
+                                  ? SizedBox(
                                       height: 22,
                                       width: 22,
                                       child: CircularProgressIndicator(
@@ -191,10 +219,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                     )
                                   : Text(_isLogin ? 'Entrar' : 'Cadastrar'),
                             ),
+                            if (_isLogin) ...[
+                              SizedBox(height: 4),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: _loading ? null : _forgotPassword,
+                                  child: const Text('Esqueci a senha'),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       TextButton(
                         onPressed: _loading
                             ? null

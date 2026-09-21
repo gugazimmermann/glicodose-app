@@ -134,6 +134,7 @@ class _SupportSectionState extends State<SupportSection> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     if (kIsWeb || !RevenueCatConfig.isSupportedPlatform) {
       return const SizedBox.shrink();
     }
@@ -143,10 +144,10 @@ class _SupportSectionState extends State<SupportSection> {
           title: 'Apoiar o GlicoDose',
           icon: Icons.favorite_outline,
           iconColor: AppColors.accent,
-          child: const Text(
+          child: Text(
             'Defina REVENUECAT_IOS_API_KEY / REVENUECAT_ANDROID_API_KEY '
             'no .env para testar IAP. Veja docs/iap-store-setup.md.',
-            style: TextStyle(fontSize: 13, color: AppColors.muted, height: 1.4),
+            style: TextStyle(fontSize: 13, color: colors.muted, height: 1.4),
           ),
         );
       }
@@ -160,21 +161,21 @@ class _SupportSectionState extends State<SupportSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'O app é gratuito. Se quiser, você pode apoiar com uma '
             'assinatura mensal opcional — isso ajuda a manter a '
             'infraestrutura e a IA. Renovação automática; cancele a '
             'qualquer momento na loja.',
-            style: TextStyle(fontSize: 13, color: AppColors.muted, height: 1.4),
+            style: TextStyle(fontSize: 13, color: colors.muted, height: 1.4),
           ),
           if (_isSupporter) ...[
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: AppColors.primarySoft,
+                color: colors.primarySoft,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFC5D0DB)),
+                border: Border.all(color: colors.outline),
               ),
               child: Row(
                 children: [
@@ -182,7 +183,7 @@ class _SupportSectionState extends State<SupportSection> {
                     Icons.verified_rounded,
                     color: AppColors.primaryDark,
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,9 +199,9 @@ class _SupportSectionState extends State<SupportSection> {
                           _activeProductId == null
                               ? 'Obrigado por manter o projeto.'
                               : 'Plano: ${SupportProducts.displayLabel(_activeProductId!)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
-                            color: AppColors.muted,
+                            color: colors.muted,
                           ),
                         ),
                       ],
@@ -210,9 +211,9 @@ class _SupportSectionState extends State<SupportSection> {
               ),
             ),
           ],
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           if (_loading)
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Center(
                 child: SizedBox(
@@ -223,10 +224,10 @@ class _SupportSectionState extends State<SupportSection> {
               ),
             )
           else if (_plans.isEmpty)
-            const Text(
+            Text(
               'Planos indisponíveis no momento. Confira a configuração '
               'nas lojas / RevenueCat ou tente mais tarde.',
-              style: TextStyle(fontSize: 13, color: AppColors.muted),
+              style: TextStyle(fontSize: 13, color: colors.muted),
             )
           else
             Wrap(
@@ -248,13 +249,13 @@ class _SupportSectionState extends State<SupportSection> {
               }).toList(),
             ),
           if (_error != null) ...[
-            const SizedBox(height: 10),
+            SizedBox(height: 10),
             Text(
               _error!,
               style: const TextStyle(color: AppColors.error, fontSize: 13),
             ),
           ],
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -263,7 +264,7 @@ class _SupportSectionState extends State<SupportSection> {
                   child: const Text('Restaurar'),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton(
                   onPressed: _busy

@@ -51,6 +51,8 @@ class InsulinService {
     required Profile profile,
     double iobU = 0,
     String? observacao,
+    String source = 'manual',
+    String? confianca,
   }) {
     return _calculator.calculate(
       glucoseMgdl: glucoseMgdl,
@@ -58,7 +60,28 @@ class InsulinService {
       profile: profile,
       iobU: iobU,
       observacao: observacao ?? 'Cálculo local com carboidratos informados.',
-      source: 'manual',
+      source: source,
+    ).copyWith(confianca: confianca);
+  }
+
+  /// Recalculate locally after the user adjusts carbs on the result screen.
+  InsulinRecommendation recalculateWithCarbs({
+    required int glucoseMgdl,
+    required double carboidratosG,
+    required Profile profile,
+    double iobU = 0,
+    String? observacao,
+    String source = 'local_adjust',
+    String? confianca,
+  }) {
+    return calculateManual(
+      glucoseMgdl: glucoseMgdl,
+      carboidratosG: carboidratosG,
+      profile: profile,
+      iobU: iobU,
+      observacao: observacao ?? 'Recálculo local após ajuste de carboidratos.',
+      source: source,
+      confianca: confianca,
     );
   }
 }

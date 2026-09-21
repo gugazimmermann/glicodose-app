@@ -8,10 +8,15 @@ import 'package:uuid/uuid.dart';
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/libre_glucose.dart';
+import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
-import 'package:diabetes_app/services/brazil_time.dart';
+import 'package:diabetes_app/services/app_time.dart';
+import 'package:diabetes_app/services/dose_factor.dart';
+import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
+import 'package:diabetes_app/services/libre_alert_service.dart';
+import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
@@ -53,10 +58,16 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _glucoseWarning;
   bool _glucoseManuallyEdited = false;
   String? _autoFilledGlucose;
+  /// When glucose was filled from Health Connect / Apple Health.
+  PlatformGlucoseReading? _healthImport;
   bool _libreConnected = false;
   bool _libreSyncing = false;
   LibreGlucoseReading? _libreReading;
   StreamSubscription<LibreGlucoseReading?>? _libreSub;
+  DoseSituation _situation = DoseSituation.none;
+  List<MealFavorite> _favorites = const [];
+  Entry? _unconfirmed;
+  bool _basalLoggedToday = false;
 
   IobLiveController get _iobLive => widget.services.iobLive;
 
@@ -67,10 +78,34 @@ class _HomeScreenState extends State<HomeScreen> {
     _iobLive.loading.addListener(_onIobChanged);
     _iobLive.failed.addListener(_onIobChanged);
     unawaited(_loadSupporterFlag());
+    unawaited(_loadFavorites());
+    unawaited(_checkUnconfirmed());
+    unawaited(_checkBasalToday());
     if (_iobLive.snapshot.value.iobU == 0 && !_iobLive.loading.value) {
       unawaited(_iobLive.refreshFromNetwork());
     }
     unawaited(_initLibre());
+  }
+
+  Future<void> _loadFavorites() async {
+    try {
+      final list = await widget.services.favorites.list();
+      if (mounted) setState(() => _favorites = list);
+    } catch (_) {}
+  }
+
+  Future<void> _checkUnconfirmed() async {
+    try {
+      final entry = await widget.services.entries.latestUnconfirmed();
+      if (mounted) setState(() => _unconfirmed = entry);
+    } catch (_) {}
+  }
+
+  Future<void> _checkBasalToday() async {
+    try {
+      final dose = await widget.services.basal.latestToday();
+      if (mounted) setState(() => _basalLoggedToday = dose != null);
+    } catch (_) {}
   }
 
   @override
@@ -160,18 +195,20 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         _autoFilledGlucose = text;
         _glucoseManuallyEdited = false;
+        _healthImport = null;
       }
     });
     if (canFill) {
       _updateGlucoseWarning(text);
     }
-    unawaited(
-      StatusHomeWidgetService.publish(
+    unawaited(() async {
+      await StatusHomeWidgetService.publish(
         libreConnected: true,
         reading: reading,
         iobU: asWholeDose(_iobLive.snapshot.value.iobU),
-      ),
-    );
+      );
+      await _iobLive.ensureWidgetRefreshRunning();
+    }());
   }
 
   Future<void> _syncLibre({bool silent = false, bool forceFill = false}) async {
@@ -181,7 +218,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final reading = await widget.services.libre.syncNow();
       if (!mounted) return;
       _applyLibreReading(reading, force: forceFill);
+      try {
+        await LibreAlertService.recordSyncSuccess();
+        await LibreAlertService.evaluate(reading, libreConnected: true);
+      } catch (_) {}
     } catch (e) {
+      try {
+        await LibreAlertService.recordSyncFailure();
+      } catch (_) {}
       if (!mounted) return;
       if (!silent) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -201,13 +245,79 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openLinkarSensor() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final reading = await Navigator.of(context).push<PlatformGlucoseReading>(
+      MaterialPageRoute<PlatformGlucoseReading>(
         builder: (_) => HealthImportScreen(services: widget.services),
       ),
     );
     if (!mounted) return;
     await _initLibre();
+    if (reading != null) {
+      _applyHealthReading(reading);
+    }
+  }
+
+  void _applyHealthReading(PlatformGlucoseReading reading) {
+    final text = reading.glucoseMgdl.toString();
+    setState(() {
+      _glucoseController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      _autoFilledGlucose = text;
+      _glucoseManuallyEdited = false;
+      _healthImport = reading;
+      _error = null;
+    });
+    _updateGlucoseWarning(text);
+  }
+
+  Future<void> _importFromHealth() async {
+    final health = widget.services.healthPlatform;
+    if (!health.isSupportedPlatform) {
+      setState(
+        () => _error =
+            'Health Connect / Apple Health não disponível neste dispositivo.',
+      );
+      return;
+    }
+    setState(() => _error = null);
+    try {
+      final avail = await health.availability();
+      if (avail == HealthPlatformAvailability.needsInstall) {
+        await health.openInstallPage();
+        return;
+      }
+      final ok = await health.requestAuthorization();
+      if (!ok) {
+        if (!mounted) return;
+        setState(
+          () => _error =
+              'Autorize a leitura de glicose em ${health.platformLabel}.',
+        );
+        return;
+      }
+      final reading = await health.latestGlucose();
+      if (!mounted) return;
+      if (reading == null) {
+        setState(
+          () => _error =
+              'Nenhuma glicose recente em ${health.platformLabel}.',
+        );
+        return;
+      }
+      _applyHealthReading(reading);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Glicose ${reading.glucoseMgdl} mg/dL de ${reading.sourceName}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = userFacingError(e));
+    }
   }
 
   void _reportSpeechIssue(String message) {
@@ -265,7 +375,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _foodMicButton() {
+  Widget _foodMicButton(BuildContext context) {
+    final colors = AppColors.of(context);
     final active = _listening || _transcribing;
     return SizedBox(
       width: 48,
@@ -278,14 +389,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 : 'Falar',
         onPressed: _transcribing ? null : _toggleFoodSpeech,
         icon: _transcribing
-            ? const SizedBox(
+            ? SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : Icon(
                 active ? Icons.mic : Icons.mic_none_outlined,
-                color: active ? AppColors.accent : AppColors.muted,
+                color: active ? AppColors.accent : colors.muted,
               ),
       ),
     );
@@ -296,10 +407,18 @@ class _HomeScreenState extends State<HomeScreen> {
     String? warning;
     if (n != null) {
       if (n > 0 && n < 70) {
-        warning = 'Glicose baixa (< 70). Considere tratar hipoglicemia antes do bolus.';
+        warning =
+            'Glicose baixa (< 70). Considere tratar hipoglicemia antes do bolus.';
       } else if (n > 300) {
-        warning = 'Glicose muito alta (> 300). Confira a leitura e siga sua orientação médica.';
+        warning =
+            'Glicose muito alta (> 300). Confira a leitura e siga sua orientação médica.';
       }
+    }
+    final trend = _libreReading?.trend;
+    if (trend != null && trend <= 2 && n != null && n < 120) {
+      final trendMsg =
+          'Tendência Libre ${_libreReading!.trendLabel}: glicose em queda — risco de hipo se bolus agora.';
+      warning = warning == null ? trendMsg : '$warning\n$trendMsg';
     }
     if (warning != _glucoseWarning) {
       setState(() => _glucoseWarning = warning);
@@ -307,14 +426,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<bool> _confirmExtremeGlucoseIfNeeded(int glucose) async {
-    if (glucose >= 70 && glucose <= 300) return true;
+    final trend = _libreReading?.trend;
+    final fallingFast = trend != null && trend <= 2 && glucose < 120;
+    if (glucose >= 70 && glucose <= 300 && !fallingFast) return true;
     final message = glucose < 70
         ? 'Glicose $glucose mg/dL está baixa. Deseja calcular mesmo assim?'
-        : 'Glicose $glucose mg/dL está muito alta. Deseja calcular mesmo assim?';
+        : fallingFast
+            ? 'Glicose $glucose mg/dL com tendência ${_libreReading!.trendLabel}. '
+                'Bolus agora aumenta risco de hipoglicemia. Continuar?'
+            : 'Glicose $glucose mg/dL está muito alta. Deseja calcular mesmo assim?';
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmar glicose'),
+        title: Text(fallingFast ? 'Tendência em queda' : 'Confirmar glicose'),
         content: Text(message),
         actions: [
           TextButton(
@@ -354,6 +478,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _glucoseWarning = null;
     _glucoseManuallyEdited = false;
     _autoFilledGlucose = null;
+    _healthImport = null;
 
     final reading = _libreReading;
     if (reading != null) {
@@ -416,17 +541,17 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
 
-      late final InsulinRecommendation result;
+      late InsulinRecommendation result;
 
       if (_useAi) {
-        final brNow = BrazilTime.now();
+        final zonedNow = AppTime.now();
         final imageUrl = imagePath == null
             ? null
             : await widget.services.entries.createSignedUrl(imagePath);
         result = await widget.services.insulin.recommendWithAi(
           glucoseMgdl: glucose,
-          localTime: BrazilTime.formatHm(brNow),
-          timezone: BrazilTime.locationName,
+          localTime: AppTime.formatHm(zonedNow),
+          timezone: AppTime.locationName,
           iobU: iobU,
           foodText: foodText.isEmpty ? null : foodText,
           foodImageUrl: imageUrl,
@@ -445,17 +570,62 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
 
+      final profileForFactor =
+          await widget.services.profile.fetchCurrent();
+      if (profileForFactor != null) {
+        result = const DoseFactor().applyToRecommendation(
+          result,
+          _situation,
+          doseStep: profileForFactor.doseStep,
+        );
+      }
+
       // Persist recommendation only — applied stays null until user confirms.
+      final health = _healthImport;
+      final fromHealth = health != null &&
+          !_glucoseManuallyEdited &&
+          _glucoseController.text.trim() == health.glucoseMgdl.toString();
+      final fromLibre = !fromHealth &&
+          _libreConnected &&
+          !_glucoseManuallyEdited &&
+          _autoFilledGlucose != null &&
+          _glucoseController.text.trim() == _autoFilledGlucose;
+      final glucoseSource = fromHealth
+          ? 'health'
+          : fromLibre
+              ? 'libre'
+              : 'manual';
+      final recordedAt =
+          fromHealth ? health.recordedAt : DateTime.now();
+
       final entry = await widget.services.entries.saveEntry(
         entryId: entryId,
         glucoseMgdl: glucose,
-        recordedAt: DateTime.now(),
+        recordedAt: recordedAt,
         foodText: foodText.isEmpty ? null : foodText,
         foodImagePath: imagePath,
         recommendedInsulin: result.insulinaRecomendadaU,
         appliedInsulin: null,
         gptRawResponse: result.raw,
+        glucoseSource: glucoseSource,
+        healthGlucoseUuid: fromHealth ? health.externalId : null,
       );
+
+      // Best-effort write-back of manual/Libre glucose (not Health echo).
+      if (glucoseSource != 'health') {
+        unawaited(() async {
+          try {
+            final profile =
+                await widget.services.profile.fetchCurrent(applyTheme: false);
+            if (profile?.healthSyncEnabled != true) return;
+            await widget.services.healthPlatform.writeGlucose(
+              glucoseMgdl: glucose,
+              recordedAt: recordedAt,
+              clientRecordId: entry.id,
+            );
+          } catch (_) {}
+        }());
+      }
 
       if (!mounted) return;
 
@@ -471,8 +641,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!mounted) return;
       widget.services.notifyEntriesChanged();
-      setState(_clearForm);
+      setState(() {
+        _clearForm();
+        _situation = DoseSituation.none;
+      });
       await _iobLive.refreshFromNetwork();
+      await _loadFavorites();
+      await _checkUnconfirmed();
     } catch (e) {
       if (mounted) setState(() => _error = userFacingError(e));
     } finally {
@@ -480,8 +655,35 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _openBasalSheet() async {
+    Profile? profile;
+    try {
+      profile = await widget.services.profile.fetchCurrent(applyTheme: false);
+    } catch (_) {}
+    if (!mounted) return;
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => _BasalLogSheet(
+        services: widget.services,
+        profile: profile,
+      ),
+    );
+    if (saved == true && mounted) {
+      widget.services.notifyEntriesChanged();
+      await _checkBasalToday();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Basal registrada')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final body = Form(
       key: _formKey,
       child: ListView(
@@ -492,13 +694,64 @@ class _HomeScreenState extends State<HomeScreen> {
               visible: !_isSupporter,
               onTap: () => widget.services.selectedTabIndex.value = 2,
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
+          ],
+          if (_unconfirmed != null) ...[
+            Material(
+              color: colors.primarySoft,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                  final e = _unconfirmed!;
+                  final rec = InsulinRecommendation.fromEntry(e);
+                  await Navigator.of(context, rootNavigator: true).push<bool>(
+                    MaterialPageRoute(
+                      builder: (_) => DoseResultScreen(
+                        services: widget.services,
+                        entry: e,
+                        recommendation: rec,
+                      ),
+                    ),
+                  );
+                  if (!mounted) return;
+                  await _checkUnconfirmed();
+                  await _iobLive.refreshFromNetwork();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.pending_actions,
+                          color: AppColors.primaryDark),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Dose pendente de confirmação '
+                          '(${_unconfirmed!.glucoseMgdl} mg/dL). '
+                          'Toque para confirmar e atualizar o IOB.',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primaryDark,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right,
+                          color: AppColors.primaryDark),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 12),
           ],
           if (!_iobLive.loading.value && _iobLive.snapshot.value.iobU > 0)
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.warningSoft,
+                color: colors.warningSoft,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFFFCC80)),
               ),
@@ -507,7 +760,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const Icon(Icons.warning_amber_rounded,
                       color: AppColors.warning),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Você ainda tem ~${formatWhole(_iobLive.snapshot.value.iobU)} U ativas. '
@@ -523,16 +776,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           if (!_iobLive.loading.value && _iobLive.snapshot.value.iobU > 0)
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
           if (_iobLive.failed.value) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFEBEE),
+                color: colors.errorSoft,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFFFCDD2)),
               ),
-              child: const Row(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(Icons.error_outline, color: AppColors.error),
@@ -551,10 +804,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
           ],
           const DisclaimerBanner(),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _openBasalSheet,
+            icon: Icon(
+              _basalLoggedToday
+                  ? Icons.check_circle_outline
+                  : Icons.nights_stay_outlined,
+            ),
+            label: Text(
+              _basalLoggedToday
+                  ? 'Basal registrada hoje · Registrar outra'
+                  : 'Registrar basal',
+            ),
+          ),
+          SizedBox(height: 12),
           SectionCard(
             title: 'Glicose atual',
             icon: Icons.water_drop,
@@ -568,7 +835,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     vertical: 18,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primarySoft,
+                    color: colors.primarySoft,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: AppColors.primary.withValues(alpha: 0.25),
@@ -582,22 +849,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: TextFormField(
                           controller: _glucoseController,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.w800,
-                            color: AppColors.ink,
+                            color: colors.ink,
                             height: 1.1,
                           ),
                           keyboardType: TextInputType.number,
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
                           ],
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'ex.: 120',
                             hintStyle: TextStyle(
                               fontSize: 36,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.hint,
+                              color: colors.hint,
                             ),
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
@@ -617,10 +884,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           onChanged: _onGlucoseChanged,
                         ),
                       ),
-                      const Text(
+                      Text(
                         'mg/dL',
                         style: TextStyle(
-                          color: AppColors.muted,
+                          color: colors.muted,
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -629,7 +896,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 if (_libreConnected) ...[
-                  const SizedBox(height: 10),
+                  SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
@@ -644,8 +911,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ];
                             return parts.join(' ');
                           }(),
-                          style: const TextStyle(
-                            color: AppColors.muted,
+                          style: TextStyle(
+                            color: colors.muted,
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                           ),
@@ -663,7 +930,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   _syncLibre(silent: false, forceFill: true),
                                 ),
                         icon: _libreSyncing
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
@@ -676,15 +943,34 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ] else ...[
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: _openLinkarSensor,
-                    icon: const Icon(Icons.sensors, size: 18),
-                    label: const Text('Linkar Sensor'),
+                  SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _openLinkarSensor,
+                          icon: const Icon(Icons.sensors, size: 18),
+                          label: const Text('Linkar Sensor'),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _importFromHealth,
+                          icon: const Icon(Icons.monitor_heart_outlined,
+                              size: 18),
+                          label: Text(
+                            widget.services.healthPlatform.isSupportedPlatform
+                                ? 'Health'
+                                : 'Health',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
                 if (_glucoseWarning != null) ...[
-                  const SizedBox(height: 10),
+                  SizedBox(height: 10),
                   Text(
                     _glucoseWarning!,
                     style: const TextStyle(
@@ -698,7 +984,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           SectionCard(
             title: 'Alimentação',
             icon: Icons.restaurant_outlined,
@@ -726,7 +1012,85 @@ class _HomeScreenState extends State<HomeScreen> {
                     });
                   },
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
+                Text(
+                  'Situação (ajuste opcional)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colors.ink,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: DoseSituation.values.map((s) {
+                    final selected = _situation == s;
+                    return ChoiceChip(
+                      label: Text(s.label),
+                      selected: selected,
+                      onSelected: (_) => setState(() => _situation = s),
+                      selectedColor: colors.primarySoft,
+                      labelStyle: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        color: selected
+                            ? AppColors.primaryDark
+                            : colors.ink,
+                      ),
+                    );
+                  }).toList(),
+                ),
+                if (_situation != DoseSituation.none) ...[
+                  SizedBox(height: 4),
+                  Text(
+                    _situation.hint,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.muted,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+                if (_favorites.isNotEmpty) ...[
+                  SizedBox(height: 12),
+                  Text(
+                    'Favoritas',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: colors.ink,
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: _favorites.take(6).map((f) {
+                      return ActionChip(
+                        label: Text(
+                          f.text.length > 28
+                              ? '${f.text.substring(0, 28)}…'
+                              : f.text,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _foodController.text = f.text;
+                            if (f.carbsG != null) {
+                              _carbsController.text = formatWhole(f.carbsG);
+                              _useAi = false;
+                            } else {
+                              _useAi = true;
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+                SizedBox(height: 12),
                 if (_useAi) ...[
                   TextFormField(
                     controller: _foodController,
@@ -737,7 +1101,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? (_transcribing ? 'Transcrevendo…' : 'Ouvindo...')
                           : 'Ex: 2 pães franceses com queijo',
                       alignLabelWithHint: true,
-                      suffixIcon: _foodMicButton(),
+                      suffixIcon: _foodMicButton(context),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
@@ -748,13 +1112,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         _transcribing
                             ? 'Transcrevendo o áudio…'
                             : 'Ouvindo… toque no microfone para parar',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.muted,
+                          color: colors.muted,
                         ),
                       ),
                     ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
@@ -764,7 +1128,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: const Text('Câmera'),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => _pickImage(ImageSource.gallery),
@@ -775,7 +1139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   if (_photoBytes != null) ...[
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Stack(
@@ -819,24 +1183,24 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
                           _photoName!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.muted,
+                            color: colors.muted,
                           ),
                         ),
                       ),
                   ],
                 ] else ...[
-                  const Text(
+                  Text(
                     'Informe os carboidratos. A dose usa sua fórmula '
                     '(correção + comida − IOB), sem chamar a IA.',
                     style: TextStyle(
                       fontSize: 13,
-                      color: AppColors.muted,
+                      color: colors.muted,
                       height: 1.35,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   TextFormField(
                     controller: _foodController,
                     decoration: InputDecoration(
@@ -844,7 +1208,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       hintText: (_listening || _transcribing)
                           ? (_transcribing ? 'Transcrevendo…' : 'Ouvindo...')
                           : 'Ex: almoço',
-                      suffixIcon: _foodMicButton(),
+                      suffixIcon: _foodMicButton(context),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
@@ -855,13 +1219,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         _transcribing
                             ? 'Transcrevendo o áudio…'
                             : 'Ouvindo… toque no microfone para parar',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.muted,
+                          color: colors.muted,
                         ),
                       ),
                     ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   TextFormField(
                     controller: _carbsController,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -878,11 +1242,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _calculating ? null : _calculate,
             icon: _calculating
-                ? const SizedBox(
+                ? SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
@@ -900,7 +1264,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           if (_error != null) ...[
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
             Text(
               _error!,
               style: const TextStyle(color: AppColors.error, fontSize: 13),
@@ -915,6 +1279,189 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Dose')),
       body: body,
+    );
+  }
+}
+
+class _BasalLogSheet extends StatefulWidget {
+  const _BasalLogSheet({
+    required this.services,
+    this.profile,
+  });
+
+  final AppServices services;
+  final Profile? profile;
+
+  @override
+  State<_BasalLogSheet> createState() => _BasalLogSheetState();
+}
+
+class _BasalLogSheetState extends State<_BasalLogSheet> {
+  late final TextEditingController _unitsController;
+  late final TextEditingController _nameController;
+  late DateTime _recordedAt;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.profile;
+    final dose = p?.basalDoseU;
+    _unitsController = TextEditingController(
+      text: dose == null ? '' : formatWhole(dose),
+    );
+    _nameController = TextEditingController(text: p?.basalInsulinName ?? '');
+    _recordedAt = AppTime.now();
+  }
+
+  @override
+  void dispose() {
+    _unitsController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    final initial = TimeOfDay.fromDateTime(_recordedAt);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      _recordedAt = DateTime(
+        _recordedAt.year,
+        _recordedAt.month,
+        _recordedAt.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+  }
+
+  Future<void> _save() async {
+    final units = parseDecimal(_unitsController.text);
+    if (units == null || units <= 0) {
+      setState(() => _error = 'Informe a dose em unidades');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    try {
+      final name = _nameController.text.trim();
+      await widget.services.basal.saveDose(
+        units: units,
+        recordedAt: _recordedAt,
+        insulinName: name.isEmpty ? null : name,
+      );
+      try {
+        final profile =
+            await widget.services.profile.fetchCurrent(applyTheme: false);
+        if (profile?.healthSyncEnabled == true) {
+          await widget.services.healthPlatform.writeInsulin(
+            units: units,
+            recordedAt: _recordedAt,
+            basal: true,
+          );
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) setState(() => _error = userFacingError(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    final hm =
+        '${_recordedAt.hour.toString().padLeft(2, '0')}:${_recordedAt.minute.toString().padLeft(2, '0')}';
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Registrar basal',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: colors.ink,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Não altera o IOB da insulina rápida.',
+            style: TextStyle(fontSize: 13, color: colors.muted, height: 1.35),
+          ),
+          SizedBox(height: 16),
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: 'Insulina',
+              hintText: 'Ex: Lantus, Tresiba',
+              prefixIcon: Icon(Icons.vaccines_outlined),
+            ),
+          ),
+          SizedBox(height: 12),
+          TextField(
+            controller: _unitsController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [decimalInputFormatter],
+            decoration: const InputDecoration(
+              labelText: 'Unidades (U)',
+              prefixIcon: Icon(Icons.straighten),
+            ),
+          ),
+          SizedBox(height: 12),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.schedule),
+            title: const Text('Horário'),
+            subtitle: Text(hm),
+            trailing: TextButton(
+              onPressed: _pickTime,
+              child: const Text('Alterar'),
+            ),
+          ),
+          if (_error != null) ...[
+            SizedBox(height: 8),
+            Text(
+              _error!,
+              style: const TextStyle(color: AppColors.error, fontSize: 13),
+            ),
+          ],
+          SizedBox(height: 12),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Salvar basal'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -6,16 +6,22 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'package:diabetes_app/services/iob_cache.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
+import 'package:diabetes_app/services/widget_health_sync.dart';
+import 'package:diabetes_app/services/widget_libre_sync.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
-/// Top-level entry for the IOB foreground-task isolate.
+/// Top-level entry for the IOB / widget foreground-task isolate.
 @pragma('vm:entry-point')
 void iobForegroundStartCallback() {
   FlutterForegroundTask.setTaskHandler(IobTaskHandler());
 }
 
-/// Android foreground service that recomputes IOB every minute and updates
-/// the status notification + launcher badge while IOB > 0.
+/// Android foreground service that every minute:
+/// - recomputes IOB
+/// - syncs Libre glucose into the home widget (when connected)
+/// - syncs Health Connect glucose into glicemias (when enabled)
+///
+/// Stays running while IOB > 0 **or** Libre is connected **or** Health sync is on.
 class IobForegroundTask {
   IobForegroundTask._();
 
@@ -35,9 +41,9 @@ class IobForegroundTask {
       androidNotificationOptions: AndroidNotificationOptions(
         // New channel id: showBadge is fixed at channel creation time on Android 8+.
         channelId: channelId,
-        channelName: 'Insulina ativa (IOB)',
+        channelName: 'GlicoDose ao vivo',
         channelDescription:
-            'Mostra quantas unidades de insulina rápida ainda estão ativas.',
+            'Atualiza IOB e glicose do sensor a cada minuto no widget.',
         channelImportance: NotificationChannelImportance.DEFAULT,
         priority: NotificationPriority.DEFAULT,
         onlyAlertOnce: true,
@@ -54,7 +60,7 @@ class IobForegroundTask {
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
         allowWakeLock: true,
-        allowWifiLock: false,
+        allowWifiLock: true,
       ),
     );
     _initialized = true;
@@ -79,15 +85,34 @@ class IobForegroundTask {
     }
   }
 
-  /// Start or update the FGS with the current whole-unit IOB count.
-  /// Returns `true` when the service is running afterwards.
+  /// Start or update the FGS for IOB > 0. Prefer [ensureRunningForWidget]
+  /// when Libre may also be connected.
   static Future<bool> ensureRunning(int n) async {
-    if (kIsWeb || n <= 0) return false;
+    if (n <= 0) return false;
+    return ensureRunningForWidget(iobU: n);
+  }
+
+  /// Keep the 1-min FGS alive for widget glucose sync and/or IOB.
+  /// Runs when [iobU] > 0, Libre is connected, or Health sync is enabled.
+  static Future<bool> ensureRunningForWidget({required int iobU}) async {
+    if (kIsWeb) return false;
+    final libreOn = await StatusHomeWidgetService.isLibreConnected();
+    final healthOn = await WidgetHealthSync.isEnabled();
+    final n = asWholeDose(iobU);
+    if (n <= 0 && !libreOn && !healthOn) {
+      await stop();
+      return false;
+    }
+
     init();
     await ensurePermissions();
 
-    final title = '~$n U ativas';
-    const body = 'Insulina rápida ainda no organismo.';
+    final title = n > 0 ? '~$n U ativas' : 'GlicoDose';
+    final body = n > 0
+        ? 'Insulina rápida ainda no organismo.'
+        : healthOn && !libreOn
+            ? 'Sincronizando glicose do Health Connect.'
+            : 'Atualizando glicose do sensor a cada minuto.';
 
     try {
       if (await FlutterForegroundTask.isRunningService) {
@@ -115,7 +140,7 @@ class IobForegroundTask {
       await _applyLauncherBadge(n);
       return await FlutterForegroundTask.isRunningService;
     } catch (e, st) {
-      debugPrint('IobForegroundTask.ensureRunning failed: $e\n$st');
+      debugPrint('IobForegroundTask.ensureRunningForWidget failed: $e\n$st');
       await _applyLauncherBadge(n);
       return false;
     }
@@ -144,8 +169,6 @@ class IobForegroundTask {
 
   static Future<void> _applyLauncherBadge(int n) async {
     try {
-      // Always attempt — isSupported() is false on Pixel (dot-only) and on
-      // OEMs before permissions; updateBadge is still needed on Samsung/etc.
       await AppBadgePlus.updateBadge(n);
     } catch (_) {}
   }
@@ -156,9 +179,29 @@ class IobTaskHandler extends TaskHandler {
     try {
       final snap = await IobCache.recompute();
       final n = asWholeDose(snap.iobU);
-      await StatusHomeWidgetService.publishIobTick(n);
-      if (n <= 0) {
-        FlutterForegroundTask.sendDataToMain({IobForegroundTask.dataKeyIobU: 0});
+      final libreOn = await StatusHomeWidgetService.isLibreConnected();
+      final healthOn = await WidgetHealthSync.isEnabled();
+
+      if (libreOn) {
+        await WidgetLibreSync.refresh(showSyncing: false);
+      } else {
+        await StatusHomeWidgetService.publishIobTick(n);
+      }
+      if (healthOn) {
+        await WidgetHealthSync.refresh(lookback: const Duration(hours: 3));
+      }
+
+      // Re-read prefs after sync (may have flipped libre_connected).
+      final stillLibre = await StatusHomeWidgetService.isLibreConnected();
+      final stillHealth = await WidgetHealthSync.isEnabled();
+      final iobAfter = libreOn
+          ? asWholeDose((await IobCache.recompute()).iobU)
+          : n;
+
+      if (iobAfter <= 0 && !stillLibre && !stillHealth) {
+        FlutterForegroundTask.sendDataToMain(
+          {IobForegroundTask.dataKeyIobU: 0},
+        );
         await FlutterForegroundTask.stopService();
         try {
           await AppBadgePlus.updateBadge(0);
@@ -166,14 +209,22 @@ class IobTaskHandler extends TaskHandler {
         return;
       }
 
+      final title = iobAfter > 0 ? '~$iobAfter U ativas' : 'GlicoDose';
+      final body = iobAfter > 0
+          ? 'Insulina rápida ainda no organismo.'
+          : stillHealth && !stillLibre
+              ? 'Sincronizando glicose do Health Connect.'
+              : 'Atualizando glicose do sensor a cada minuto.';
       await FlutterForegroundTask.updateService(
-        notificationTitle: '~$n U ativas',
-        notificationText: 'Insulina rápida ainda no organismo.',
+        notificationTitle: title,
+        notificationText: body,
       );
       try {
-        await AppBadgePlus.updateBadge(n);
+        await AppBadgePlus.updateBadge(iobAfter);
       } catch (_) {}
-      FlutterForegroundTask.sendDataToMain({IobForegroundTask.dataKeyIobU: n});
+      FlutterForegroundTask.sendDataToMain(
+        {IobForegroundTask.dataKeyIobU: iobAfter},
+      );
     } catch (e, st) {
       debugPrint('IobTaskHandler._tick failed: $e\n$st');
     }

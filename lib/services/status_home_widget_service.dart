@@ -6,12 +6,13 @@ import 'package:home_widget/home_widget.dart';
 import 'package:diabetes_app/models/libre_glucose.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
-/// Publishes glucose + IOB to the Android home-screen App Widget.
+/// Publishes glucose + IOB to the Android / iOS home-screen widget.
 class StatusHomeWidgetService {
   StatusHomeWidgetService._();
 
   static const androidQualifiedName =
       'com.diabetes.diabetes_app.GlicoDoseWidgetProvider';
+  static const iosWidgetName = 'GlicoDoseWidget';
 
   static const keyLibreConnected = 'libre_connected';
   static const keyHasGlucose = 'has_glucose';
@@ -24,7 +25,22 @@ class StatusHomeWidgetService {
   static const keyLastError = 'last_error';
   static const keyUpdatedAt = 'updated_at';
 
-  static bool get _supported => !kIsWeb && Platform.isAndroid;
+  /// Test override for [publish]/[clear] support (Linux CI is otherwise skipped).
+  @visibleForTesting
+  static bool? supportedOverride;
+
+  static bool get _supported =>
+      supportedOverride ?? (!kIsWeb && (Platform.isAndroid || Platform.isIOS));
+
+  /// Whether Libre was last published as connected (for FGS keep-alive).
+  static Future<bool> isLibreConnected() async {
+    if (!_supported) return false;
+    try {
+      return await HomeWidget.getWidgetData<bool>(keyLibreConnected) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Future<void> publish({
     bool? libreConnected,
@@ -155,6 +171,7 @@ class StatusHomeWidgetService {
       name: 'GlicoDoseWidgetProvider',
       androidName: 'GlicoDoseWidgetProvider',
       qualifiedAndroidName: androidQualifiedName,
+      iOSName: iosWidgetName,
     );
   }
 }

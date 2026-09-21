@@ -24,4 +24,8 @@ class AuthService {
   }
 
   Future<void> signOut() => _client.auth.signOut();
+
+  Future<void> resetPassword(String email) {
+    return _client.auth.resetPasswordForEmail(email.trim());
+  }
 }

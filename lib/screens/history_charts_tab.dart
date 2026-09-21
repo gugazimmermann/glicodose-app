@@ -2,11 +2,12 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import 'package:diabetes_app/app.dart';
+import 'package:diabetes_app/models/basal_dose.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/history_stats.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -49,17 +50,40 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
     final entriesFuture = since == null
         ? widget.services.entries.listEntries(limit: 200)
         : widget.services.entries.listEntriesSince(since);
+    final basalFuture = since == null
+        ? widget.services.basal.listDoses(limit: 200)
+        : widget.services.basal.listSince(since);
+    final glicemiasFuture = since == null
+        ? widget.services.glicemias.listRecent(limit: 5000)
+        : widget.services.glicemias.listSince(since);
     final profileFuture = widget.services.profile.fetchCurrent();
-    final results = await Future.wait([entriesFuture, profileFuture]);
+    final results = await Future.wait([
+      entriesFuture,
+      basalFuture,
+      glicemiasFuture,
+      profileFuture,
+    ]);
     final entries = results[0] as List<Entry>;
-    final profile = results[1] as Profile?;
+    final basalDoses = results[1] as List<BasalDose>;
+    final glucoseSamples = results[2] as List<GlucoseSample>;
+    final profile = results[3] as Profile?;
     final chronological = [...entries]
       ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
-    final stats = HistoryStats.fromEntries(chronological, profile: profile);
+    final chartSamples = HistoryStats.downsample(glucoseSamples);
+    final stats = HistoryStats.compute(
+      entries: chronological,
+      glucoseSamples: glucoseSamples,
+      profile: profile,
+    );
+    final totalBasalU =
+        basalDoses.fold<double>(0, (sum, b) => sum + b.units);
     return _ChartsData(
       entries: chronological,
+      glucoseSamples: chartSamples,
       profile: profile,
       stats: stats,
+      totalBasalU: totalBasalU,
+      basalCount: basalDoses.length,
     );
   }
 
@@ -73,11 +97,12 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return FutureBuilder<_ChartsData>(
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -93,7 +118,7 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: AppColors.error),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   FilledButton(
                     onPressed: () => setState(() => _future = _load()),
                     child: const Text('Tentar novamente'),
@@ -119,9 +144,11 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
                 selected: _period,
                 onSelected: _setPeriod,
               ),
-              const SizedBox(height: 16),
-              if (data.entries.isEmpty)
-                const SectionCard(
+              SizedBox(height: 16),
+              if (data.entries.isEmpty &&
+                  data.basalCount == 0 &&
+                  data.glucoseSamples.isEmpty)
+                SectionCard(
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Text(
@@ -129,21 +156,39 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 15,
-                        color: AppColors.muted,
+                        color: colors.muted,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 )
               else ...[
-                _StatsSummary(stats: data.stats),
-                const SizedBox(height: 16),
-                _GlucoseChart(
-                  entries: data.entries,
-                  dayTarget: data.stats.dayTargetMgdl,
+                _StatsSummary(
+                  stats: data.stats,
+                  totalBasalU: data.totalBasalU,
+                  basalCount: data.basalCount,
                 ),
-                const SizedBox(height: 16),
-                _InsulinChart(entries: data.entries),
+                if (data.glucoseSamples.isNotEmpty ||
+                    data.entries.isNotEmpty) ...[
+                  SizedBox(height: 16),
+                  _GlucoseChart(
+                    samples: data.glucoseSamples.isNotEmpty
+                        ? data.glucoseSamples
+                        : data.entries
+                            .map(
+                              (e) => GlucoseSample(
+                                glucoseMgdl: e.glucoseMgdl,
+                                recordedAt: e.recordedAt,
+                              ),
+                            )
+                            .toList(),
+                    dayTarget: data.stats.dayTargetMgdl,
+                  ),
+                ],
+                if (data.entries.isNotEmpty) ...[
+                  SizedBox(height: 16),
+                  _InsulinChart(entries: data.entries),
+                ],
               ],
             ],
           ),
@@ -156,13 +201,19 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
 class _ChartsData {
   const _ChartsData({
     required this.entries,
+    required this.glucoseSamples,
     required this.profile,
     required this.stats,
+    required this.totalBasalU,
+    required this.basalCount,
   });
 
   final List<Entry> entries;
+  final List<GlucoseSample> glucoseSamples;
   final Profile? profile;
   final HistoryStats stats;
+  final double totalBasalU;
+  final int basalCount;
 }
 
 class _PeriodChips extends StatelessWidget {
@@ -176,6 +227,7 @@ class _PeriodChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Wrap(
       spacing: 8,
       children: HistoryPeriod.values.map((p) {
@@ -184,13 +236,13 @@ class _PeriodChips extends StatelessWidget {
           label: Text(p.label),
           selected: isSelected,
           onSelected: (_) => onSelected(p),
-          selectedColor: AppColors.primarySoft,
+          selectedColor: colors.primarySoft,
           labelStyle: TextStyle(
             fontWeight: FontWeight.w600,
-            color: isSelected ? AppColors.primaryDark : AppColors.ink,
+            color: isSelected ? AppColors.primaryDark : colors.ink,
           ),
           side: BorderSide(
-            color: isSelected ? AppColors.primary : const Color(0xFFC5D0DB),
+            color: isSelected ? AppColors.primary : colors.outline,
           ),
         );
       }).toList(),
@@ -199,12 +251,19 @@ class _PeriodChips extends StatelessWidget {
 }
 
 class _StatsSummary extends StatelessWidget {
-  const _StatsSummary({required this.stats});
+  const _StatsSummary({
+    required this.stats,
+    required this.totalBasalU,
+    required this.basalCount,
+  });
 
   final HistoryStats stats;
+  final double totalBasalU;
+  final int basalCount;
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     String fmt1(double? v, {String suffix = ''}) {
       if (v == null) return '—';
       return '${formatWhole(v)}$suffix';
@@ -229,17 +288,31 @@ class _StatsSummary extends StatelessWidget {
         children: [
           Text(
             '${stats.count} registro${stats.count == 1 ? '' : 's'}',
-            style: const TextStyle(fontSize: 13, color: AppColors.muted),
+            style: TextStyle(fontSize: 13, color: colors.muted),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: 1.4,
+            childAspectRatio: 1.25,
             children: [
+              _MetricTile(
+                label: 'TIR 70–180',
+                value: fmtPct(stats.tirPercent),
+                hint: stats.tirPercent == null
+                    ? null
+                    : '${stats.tirCount} de ${stats.count}',
+              ),
+              _MetricTile(
+                label: 'GMI (eA1c)',
+                value: stats.gmiPercent == null
+                    ? '—'
+                    : '${stats.gmiPercent!.toStringAsFixed(1)}%',
+                hint: 'Estimativa a partir da média',
+              ),
               _MetricTile(
                 label: 'Glicose média',
                 value: fmt1(stats.avgGlucose, suffix: ' mg/dL'),
@@ -255,11 +328,18 @@ class _StatsSummary extends StatelessWidget {
                     : '${stats.inTargetCount} de ${stats.count}',
               ),
               _MetricTile(
-                label: 'Insulina aplicada',
+                label: 'Insulina rápida',
                 value: fmt1(stats.totalAppliedU, suffix: ' U'),
                 hint: stats.avgAppliedU == null
                     ? null
                     : 'Média ${formatWhole(stats.avgAppliedU)} U',
+              ),
+              _MetricTile(
+                label: 'Basal aplicada',
+                value: fmt1(totalBasalU, suffix: ' U'),
+                hint: basalCount == 0
+                    ? 'Sem registros de basal'
+                    : '$basalCount registro${basalCount == 1 ? '' : 's'}',
               ),
               _MetricTile(
                 label: 'Desvio vs recomendada',
@@ -301,12 +381,13 @@ class _MetricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: colors.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,35 +396,35 @@ class _MetricTile extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               height: 1.2,
-              color: AppColors.muted,
+              color: colors.muted,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Text(
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               height: 1.2,
               fontWeight: FontWeight.w800,
-              color: AppColors.ink,
+              color: colors.ink,
             ),
           ),
           if (hint != null) ...[
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
             Text(
               hint!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 height: 1.2,
-                color: AppColors.hint,
+                color: colors.hint,
               ),
             ),
           ],
@@ -355,26 +436,26 @@ class _MetricTile extends StatelessWidget {
 
 class _GlucoseChart extends StatelessWidget {
   const _GlucoseChart({
-    required this.entries,
+    required this.samples,
     this.dayTarget,
   });
 
-  final List<Entry> entries;
+  final List<GlucoseSample> samples;
   final int? dayTarget;
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final spots = <FlSpot>[];
-    for (var i = 0; i < entries.length; i++) {
-      spots.add(FlSpot(i.toDouble(), entries[i].glucoseMgdl.toDouble()));
+    for (var i = 0; i < samples.length; i++) {
+      spots.add(FlSpot(i.toDouble(), samples[i].glucoseMgdl.toDouble()));
     }
 
-    final values = entries.map((e) => e.glucoseMgdl.toDouble()).toList();
+    final values = samples.map((e) => e.glucoseMgdl.toDouble()).toList();
     if (dayTarget != null) values.add(dayTarget!.toDouble());
     final minY = (values.reduce(math.min) - 20).clamp(40, 400).toDouble();
     final maxY = (values.reduce(math.max) + 20).clamp(80, 500).toDouble();
 
-    final dateFmt = DateFormat('dd/MM');
 
     return SectionCard(
       title: 'Glicose',
@@ -387,7 +468,7 @@ class _GlucoseChart extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
                 'Linha guia: meta dia $dayTarget mg/dL',
-                style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                style: TextStyle(fontSize: 12, color: colors.muted),
               ),
             ),
           SizedBox(
@@ -397,20 +478,20 @@ class _GlucoseChart extends StatelessWidget {
                 minY: minY,
                 maxY: maxY,
                 minX: 0,
-                maxX: math.max(0, entries.length - 1).toDouble(),
+                maxX: math.max(0, samples.length - 1).toDouble(),
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
                   getDrawingHorizontalLine: (v) => FlLine(
-                    color: const Color(0xFFE2E8F0),
+                    color: colors.grid,
                     strokeWidth: 1,
                   ),
                 ),
                 borderData: FlBorderData(
                   show: true,
-                  border: const Border(
-                    left: BorderSide(color: Color(0xFFC5D0DB)),
-                    bottom: BorderSide(color: Color(0xFFC5D0DB)),
+                  border: Border(
+                    left: BorderSide(color: colors.outline),
+                    bottom: BorderSide(color: colors.outline),
                   ),
                 ),
                 titlesData: FlTitlesData(
@@ -426,9 +507,9 @@ class _GlucoseChart extends StatelessWidget {
                       reservedSize: 40,
                       getTitlesWidget: (value, meta) => Text(
                         value.toInt().toString(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
-                          color: AppColors.muted,
+                          color: colors.muted,
                         ),
                       ),
                     ),
@@ -437,10 +518,10 @@ class _GlucoseChart extends StatelessWidget {
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 28,
-                      interval: _xInterval(entries.length),
+                      interval: chartXInterval(samples.length),
                       getTitlesWidget: (value, meta) {
                         final i = value.round();
-                        if (i < 0 || i >= entries.length) {
+                        if (i < 0 || i >= samples.length) {
                           return const SizedBox.shrink();
                         }
                         if ((value - i).abs() > 0.01) {
@@ -449,10 +530,10 @@ class _GlucoseChart extends StatelessWidget {
                         return Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
-                            dateFmt.format(entries[i].recordedAt.toLocal()),
-                            style: const TextStyle(
+                            AppTime.formatDateShort(samples[i].recordedAt),
+                            style: TextStyle(
                               fontSize: 10,
-                              color: AppColors.muted,
+                              color: colors.muted,
                             ),
                           ),
                         );
@@ -466,7 +547,7 @@ class _GlucoseChart extends StatelessWidget {
                         horizontalLines: [
                           HorizontalLine(
                             y: dayTarget!.toDouble(),
-                            color: AppColors.muted.withValues(alpha: 0.55),
+                            color: colors.muted.withValues(alpha: 0.55),
                             strokeWidth: 1.5,
                             dashArray: [6, 4],
                           ),
@@ -475,10 +556,10 @@ class _GlucoseChart extends StatelessWidget {
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (touched) => touched.map((t) {
-                      final i = t.x.round().clamp(0, entries.length - 1);
-                      final e = entries[i];
-                      final when = DateFormat('dd/MM HH:mm')
-                          .format(e.recordedAt.toLocal());
+                      final i = t.x.round().clamp(0, samples.length - 1);
+                      final e = samples[i];
+                      final when =
+                          AppTime.formatDateTimeShort(e.recordedAt);
                       return LineTooltipItem(
                         '$when\n${e.glucoseMgdl} mg/dL',
                         const TextStyle(
@@ -499,18 +580,18 @@ class _GlucoseChart extends StatelessWidget {
                     barWidth: 3,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
-                      show: entries.length <= 40,
+                      show: samples.length <= 40,
                       getDotPainter: (spot, percent, bar, index) =>
                           FlDotCirclePainter(
                         radius: 3.5,
                         color: AppColors.primary,
                         strokeWidth: 1.5,
-                        strokeColor: Colors.white,
+                        strokeColor: colors.dotStroke,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
-                      color: AppColors.primary.withValues(alpha: 0.12),
+                      color: AppColors.primary.withValues(alpha: 0.08),
                     ),
                   ),
                 ],
@@ -530,6 +611,7 @@ class _InsulinChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final withDose = entries
         .where(
           (e) => e.recommendedInsulin != null || e.appliedInsulin != null,
@@ -537,12 +619,12 @@ class _InsulinChart extends StatelessWidget {
         .toList();
 
     if (withDose.isEmpty) {
-      return const SectionCard(
+      return SectionCard(
         title: 'Insulina',
         icon: Icons.water_drop_outlined,
         child: Text(
           'Nenhuma dose registrada no período.',
-          style: TextStyle(color: AppColors.muted),
+          style: TextStyle(color: colors.muted),
         ),
       );
     }
@@ -553,7 +635,6 @@ class _InsulinChart extends StatelessWidget {
         )
         .reduce(math.max);
     final maxY = math.max(4.0, (maxU + 1).ceilToDouble());
-    final dateFmt = DateFormat('dd/MM');
 
     return SectionCard(
       title: 'Insulina',
@@ -561,14 +642,14 @@ class _InsulinChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               _LegendDot(color: AppColors.primary, label: 'Recomendada'),
               SizedBox(width: 16),
               _LegendDot(color: AppColors.accent, label: 'Aplicada'),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           SizedBox(
             height: 240,
             child: BarChart(
@@ -581,15 +662,15 @@ class _InsulinChart extends StatelessWidget {
                   show: true,
                   drawVerticalLine: false,
                   getDrawingHorizontalLine: (v) => FlLine(
-                    color: const Color(0xFFE2E8F0),
+                    color: colors.grid,
                     strokeWidth: 1,
                   ),
                 ),
                 borderData: FlBorderData(
                   show: true,
-                  border: const Border(
-                    left: BorderSide(color: Color(0xFFC5D0DB)),
-                    bottom: BorderSide(color: Color(0xFFC5D0DB)),
+                  border: Border(
+                    left: BorderSide(color: colors.outline),
+                    bottom: BorderSide(color: colors.outline),
                   ),
                 ),
                 titlesData: FlTitlesData(
@@ -605,9 +686,9 @@ class _InsulinChart extends StatelessWidget {
                       reservedSize: 32,
                       getTitlesWidget: (value, meta) => Text(
                         value.toInt().toString(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
-                          color: AppColors.muted,
+                          color: colors.muted,
                         ),
                       ),
                     ),
@@ -621,17 +702,17 @@ class _InsulinChart extends StatelessWidget {
                         if (i < 0 || i >= withDose.length) {
                           return const SizedBox.shrink();
                         }
-                        final step = _xInterval(withDose.length).round();
+                        final step = chartXInterval(withDose.length).round();
                         if (step > 1 && i % step != 0 && i != withDose.length - 1) {
                           return const SizedBox.shrink();
                         }
                         return Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
-                            dateFmt.format(withDose[i].recordedAt.toLocal()),
-                            style: const TextStyle(
+                            AppTime.formatDateShort(withDose[i].recordedAt),
+                            style: TextStyle(
                               fontSize: 10,
-                              color: AppColors.muted,
+                              color: colors.muted,
                             ),
                           ),
                         );
@@ -643,8 +724,8 @@ class _InsulinChart extends StatelessWidget {
                   touchTooltipData: BarTouchTooltipData(
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       final e = withDose[groupIndex];
-                      final when = DateFormat('dd/MM HH:mm')
-                          .format(e.recordedAt.toLocal());
+                      final when =
+                          AppTime.formatDateTimeShort(e.recordedAt);
                       final label = rodIndex == 0 ? 'Rec.' : 'Apl.';
                       return BarTooltipItem(
                         '$when\n$label ${formatWhole(rod.toY)} U',
@@ -705,6 +786,7 @@ class _LegendDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -713,12 +795,12 @@ class _LegendDot extends StatelessWidget {
           height: 10,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 6),
+        SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
-            color: AppColors.muted,
+            color: colors.muted,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -727,7 +809,8 @@ class _LegendDot extends StatelessWidget {
   }
 }
 
-double _xInterval(int count) {
+/// X-axis label interval for sparse entry charts (exposed for unit tests).
+double chartXInterval(int count) {
   if (count <= 6) return 1;
   if (count <= 12) return 2;
   if (count <= 24) return 4;

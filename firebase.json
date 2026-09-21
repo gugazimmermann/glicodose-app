@@ -1,0 +1,30 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "glicodose1",
+          "appId": "1:1090715856317:android:59c82279a59e0797a376d4",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "glicodose1",
+          "configurations": {
+            "android": "1:1090715856317:android:59c82279a59e0797a376d4",
+            "ios": "1:1090715856317:ios:eef673df790052d3a376d4"
+          }
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "glicodose1",
+          "appId": "1:1090715856317:ios:eef673df790052d3a376d4",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      }
+    }
+  }
+}

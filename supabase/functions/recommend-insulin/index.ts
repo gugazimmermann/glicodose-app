@@ -1,4 +1,5 @@
-// Hybrid bolus: GPT estimates carbs via TACO; formula uses day/night target (America/Sao_Paulo).
+// Hybrid bolus: GPT estimates carbs via TACO; formula uses day/night target
+// in the patient's profile timezone (default America/Sao_Paulo).
 // Deploy: supabase functions deploy recommend-insulin
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
@@ -15,6 +16,7 @@ type Profile = {
   target_night_mgdl: number | null
   night_start_minute: number | null
   night_end_minute: number | null
+  timezone: string | null
   isf_mgdl_per_u: number | null
   ic_ratio: number | null
   rapid_insulin_name: string | null
@@ -103,19 +105,30 @@ function computeBolus(opts: {
   return { carbs, correcao, bolusComida, doseBruta, doseFinal, iob }
 }
 
-/** Brazil official time parts in America/Sao_Paulo */
-function brazilNowParts(date = new Date()) {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Sao_Paulo',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+/** Wall-clock parts in an IANA timezone (fallback America/Sao_Paulo). */
+function zonedNowParts(timeZone: string, date = new Date()) {
+  const zone = timeZone?.trim() || 'America/Sao_Paulo'
+  let fmt: Intl.DateTimeFormat
+  try {
+    fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  } catch (_) {
+    fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'America/Sao_Paulo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  }
   const parts = fmt.formatToParts(date)
   const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0')
   const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0')
   const hm = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-  return { hour, minute, minuteOfDay: hour * 60 + minute, hm }
+  return { hour, minute, minuteOfDay: hour * 60 + minute, hm, timeZone: zone }
 }
 
 function isNightWindow(
@@ -189,7 +202,7 @@ Deno.serve(async (req) => {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select(
-        'diabetes_type, target_glucose_mgdl, target_night_mgdl, night_start_minute, night_end_minute, isf_mgdl_per_u, ic_ratio, rapid_insulin_name, dose_step',
+        'diabetes_type, target_glucose_mgdl, target_night_mgdl, night_start_minute, night_end_minute, timezone, isf_mgdl_per_u, ic_ratio, rapid_insulin_name, dose_step',
       )
       .eq('id', user.id)
       .maybeSingle()
@@ -220,8 +233,13 @@ Deno.serve(async (req) => {
     const nightStart = Number(p.night_start_minute ?? 1200)
     const nightEnd = Number(p.night_end_minute ?? 359)
 
-    const br = brazilNowParts()
-    const night = isNightWindow(br.minuteOfDay, nightStart, nightEnd)
+    const bodyTz =
+      typeof body.timezone === 'string' ? (body.timezone as string).trim() : ''
+    const profileTz = (p.timezone ?? '').trim()
+    const timeZone = profileTz || bodyTz || 'America/Sao_Paulo'
+
+    const zoned = zonedNowParts(timeZone)
+    const night = isNightWindow(zoned.minuteOfDay, nightStart, nightEnd)
     const target = night
       ? Number(p.target_night_mgdl)
       : Number(p.target_glucose_mgdl)
@@ -231,7 +249,7 @@ Deno.serve(async (req) => {
     const prompt = `Paciente com diabetes ${tipo}. Sempre faça contagem de carboidratos da refeição, conforme composição alimentar.
 
 Use a tabela TACO (Tabela Brasileira de Composição de Alimentos) como referência principal para estimar carboidratos em gramas.
-Horário oficial brasileiro (America/Sao_Paulo): ${br.hm}.
+Horário no fuso do paciente (${zoned.timeZone}): ${zoned.hm}.
 
 Refeição (texto): ${foodText ?? 'não informado'}
 Foto do alimento/rótulo: ${foodImageUrl ? 'anexada' : 'não informada'}
@@ -392,7 +410,7 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
       dose_step: doseStep,
       meta_mgdl: target,
       meta_periodo: periodo,
-      horario_br: br.hm,
+      horario_br: zoned.hm,
       observacao,
       source: 'ai',
     })

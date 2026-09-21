@@ -1,28 +1,41 @@
+// coverage:ignore-file
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:home_widget/home_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/config/supabase_config.dart';
-import 'package:diabetes_app/services/brazil_time.dart';
+import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/iob_background.dart';
 import 'package:diabetes_app/services/iob_foreground_task.dart';
 import 'package:diabetes_app/services/status_home_widget_callback.dart';
+import 'package:diabetes_app/services/theme_preference_service.dart';
+import 'package:diabetes_app/services/push_token_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-  BrazilTime.ensureInitialized();
+  AppTime.ensureInitialized();
+  await ThemePreferenceService.load();
   _installErrorHandlers();
 
   if (!kIsWeb) {
     IobForegroundTask.init();
     await Workmanager().initialize(iobBackgroundCallbackDispatcher);
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      await HomeWidget.setAppGroupId('group.com.diabetes.diabetesApp');
+    }
     await registerStatusHomeWidgetCallback();
+    // Optional: no-op until google-services / GoogleService-Info are present.
+    if (await PushTokenService.ensureFirebase()) {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    }
   }
 
   if (!SupabaseConfig.isConfigured) {

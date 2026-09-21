@@ -9,6 +9,10 @@ class Entry {
     this.recommendedInsulin,
     this.appliedInsulin,
     this.gptRawResponse,
+    this.glucoseSource,
+    this.healthGlucoseUuid,
+    this.healthInsulinUuid,
+    this.healthMealClientId,
     this.createdAt,
   });
 
@@ -21,6 +25,11 @@ class Entry {
   final double? recommendedInsulin;
   final double? appliedInsulin;
   final Map<String, dynamic>? gptRawResponse;
+  /// manual | health | libre
+  final String? glucoseSource;
+  final String? healthGlucoseUuid;
+  final String? healthInsulinUuid;
+  final String? healthMealClientId;
   final DateTime? createdAt;
 
   factory Entry.fromJson(Map<String, dynamic> json) {
@@ -37,6 +46,10 @@ class Entry {
       gptRawResponse: rawGpt == null
           ? null
           : Map<String, dynamic>.from(rawGpt as Map),
+      glucoseSource: json['glucose_source'] as String?,
+      healthGlucoseUuid: json['health_glucose_uuid'] as String?,
+      healthInsulinUuid: json['health_insulin_uuid'] as String?,
+      healthMealClientId: json['health_meal_client_id'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -54,6 +67,10 @@ class Entry {
       'recommended_insulin': recommendedInsulin,
       'applied_insulin': appliedInsulin,
       'gpt_raw_response': gptRawResponse,
+      'glucose_source': glucoseSource,
+      'health_glucose_uuid': healthGlucoseUuid,
+      'health_insulin_uuid': healthInsulinUuid,
+      'health_meal_client_id': healthMealClientId,
     };
   }
 
@@ -64,6 +81,11 @@ class Entry {
       'food_text': foodText,
       'recommended_insulin': recommendedInsulin,
       'applied_insulin': appliedInsulin,
+      if (gptRawResponse != null) 'gpt_raw_response': gptRawResponse,
+      'glucose_source': glucoseSource,
+      'health_glucose_uuid': healthGlucoseUuid,
+      'health_insulin_uuid': healthInsulinUuid,
+      'health_meal_client_id': healthMealClientId,
     };
   }
 
@@ -73,6 +95,11 @@ class Entry {
     String? foodText,
     double? recommendedInsulin,
     Object? appliedInsulin = _unset,
+    Object? gptRawResponse = _unset,
+    Object? glucoseSource = _unset,
+    Object? healthGlucoseUuid = _unset,
+    Object? healthInsulinUuid = _unset,
+    Object? healthMealClientId = _unset,
   }) {
     return Entry(
       id: id,
@@ -85,7 +112,21 @@ class Entry {
       appliedInsulin: identical(appliedInsulin, _unset)
           ? this.appliedInsulin
           : appliedInsulin as double?,
-      gptRawResponse: gptRawResponse,
+      gptRawResponse: identical(gptRawResponse, _unset)
+          ? this.gptRawResponse
+          : gptRawResponse as Map<String, dynamic>?,
+      glucoseSource: identical(glucoseSource, _unset)
+          ? this.glucoseSource
+          : glucoseSource as String?,
+      healthGlucoseUuid: identical(healthGlucoseUuid, _unset)
+          ? this.healthGlucoseUuid
+          : healthGlucoseUuid as String?,
+      healthInsulinUuid: identical(healthInsulinUuid, _unset)
+          ? this.healthInsulinUuid
+          : healthInsulinUuid as String?,
+      healthMealClientId: identical(healthMealClientId, _unset)
+          ? this.healthMealClientId
+          : healthMealClientId as String?,
       createdAt: createdAt,
     );
   }
@@ -176,6 +217,37 @@ class InsulinRecommendation {
       insulinaRecomendadaU: _finite(entry.recommendedInsulin),
       source: 'manual',
       raw: raw,
+    );
+  }
+
+  InsulinRecommendation copyWith({
+    double? carboidratosG,
+    double? correcaoU,
+    double? bolusComidaU,
+    double? insulinaRecomendadaU,
+    double? iobU,
+    String? observacao,
+    String? source,
+    int? metaMgdl,
+    String? metaPeriodo,
+    String? horarioBr,
+    String? confianca,
+    Map<String, dynamic>? raw,
+  }) {
+    return InsulinRecommendation(
+      carboidratosG: carboidratosG ?? this.carboidratosG,
+      correcaoU: correcaoU ?? this.correcaoU,
+      bolusComidaU: bolusComidaU ?? this.bolusComidaU,
+      insulinaRecomendadaU:
+          insulinaRecomendadaU ?? this.insulinaRecomendadaU,
+      iobU: iobU ?? this.iobU,
+      observacao: observacao ?? this.observacao,
+      source: source ?? this.source,
+      metaMgdl: metaMgdl ?? this.metaMgdl,
+      metaPeriodo: metaPeriodo ?? this.metaPeriodo,
+      horarioBr: horarioBr ?? this.horarioBr,
+      confianca: confianca ?? this.confianca,
+      raw: raw ?? this.raw,
     );
   }
 }

@@ -1,6 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
-import 'package:diabetes_app/services/brazil_time.dart';
+import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/target_resolver.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -18,8 +20,9 @@ extension HistoryPeriodX on HistoryPeriod {
     }
   }
 
+  /// Anchor is profile timezone "now" (not device local).
   DateTime? since({DateTime? now}) {
-    final n = now ?? DateTime.now();
+    final n = now ?? AppTime.now();
     switch (this) {
       case HistoryPeriod.days7:
         return n.subtract(const Duration(days: 7));
@@ -31,6 +34,17 @@ extension HistoryPeriodX on HistoryPeriod {
   }
 }
 
+/// Sparse or dense glucose point for charts / TIR / GMI.
+class GlucoseSample {
+  const GlucoseSample({
+    required this.glucoseMgdl,
+    required this.recordedAt,
+  });
+
+  final int glucoseMgdl;
+  final DateTime recordedAt;
+}
+
 class HistoryStats {
   const HistoryStats({
     required this.count,
@@ -39,6 +53,9 @@ class HistoryStats {
     required this.maxGlucose,
     required this.inTargetPercent,
     required this.inTargetCount,
+    required this.tirPercent,
+    required this.tirCount,
+    required this.gmiPercent,
     required this.totalAppliedU,
     required this.avgAppliedU,
     required this.appliedCount,
@@ -55,8 +72,14 @@ class HistoryStats {
   final double? avgGlucose;
   final int? minGlucose;
   final int? maxGlucose;
+  /// Personal target ±20% (legacy / prescrito).
   final double? inTargetPercent;
   final int inTargetCount;
+  /// Clinical TIR 70–180 mg/dL.
+  final double? tirPercent;
+  final int tirCount;
+  /// Glucose Management Indicator (estimated A1c %).
+  final double? gmiPercent;
   final double totalAppliedU;
   final double? avgAppliedU;
   final int appliedCount;
@@ -76,6 +99,9 @@ class HistoryStats {
     maxGlucose: null,
     inTargetPercent: null,
     inTargetCount: 0,
+    tirPercent: null,
+    tirCount: 0,
+    gmiPercent: null,
     totalAppliedU: 0,
     avgAppliedU: null,
     appliedCount: 0,
@@ -91,36 +117,56 @@ class HistoryStats {
   /// Readings within ±20% of the day/night target for that timestamp.
   static const targetTolerance = 0.20;
 
-  static HistoryStats fromEntries(
-    List<Entry> entries, {
+  /// Standard clinical time-in-range bounds (mg/dL).
+  static const tirLowMgdl = 70;
+  static const tirHighMgdl = 180;
+
+  /// GMI ≈ 3.31 + 0.02392 × mean glucose (mg/dL). Requires ≥1 reading.
+  static double? estimateGmi(double? avgGlucoseMgdl) {
+    if (avgGlucoseMgdl == null) return null;
+    return 3.31 + 0.02392 * avgGlucoseMgdl;
+  }
+
+  /// Prefer dense [glucoseSamples] for TIR/GMI; insulin/carbs always from [entries].
+  static HistoryStats compute({
+    required List<Entry> entries,
+    List<GlucoseSample> glucoseSamples = const [],
     Profile? profile,
     TargetResolver resolver = const TargetResolver(),
   }) {
-    if (entries.isEmpty) {
-      return HistoryStats(
-        count: 0,
-        avgGlucose: null,
-        minGlucose: null,
-        maxGlucose: null,
-        inTargetPercent: null,
-        inTargetCount: 0,
-        totalAppliedU: 0,
-        avgAppliedU: null,
-        appliedCount: 0,
-        totalRecommendedU: 0,
-        recommendedCount: 0,
-        avgDoseDeltaU: null,
-        doseDeltaCount: 0,
-        avgCarbsG: null,
-        carbsCount: 0,
-        dayTargetMgdl: profile?.targetGlucoseMgdl,
-      );
-    }
+    final samples = glucoseSamples.isNotEmpty
+        ? glucoseSamples
+        : entries
+            .map(
+              (e) => GlucoseSample(
+                glucoseMgdl: e.glucoseMgdl,
+                recordedAt: e.recordedAt,
+              ),
+            )
+            .toList();
 
+    AppTime.ensureInitialized();
+    final location = AppTime.location;
+
+    int? minG;
+    int? maxG;
     var glucoseSum = 0;
-    var minG = entries.first.glucoseMgdl;
-    var maxG = entries.first.glucoseMgdl;
     var inTarget = 0;
+    var tir = 0;
+    for (final s in samples) {
+      final g = s.glucoseMgdl;
+      glucoseSum += g;
+      minG = minG == null ? g : math.min(minG, g);
+      maxG = maxG == null ? g : math.max(maxG, g);
+      if (g >= tirLowMgdl && g <= tirHighMgdl) tir++;
+      if (profile != null) {
+        final br = tz.TZDateTime.from(s.recordedAt.toUtc(), location);
+        final target = resolver.resolve(profile, now: br);
+        final lo = target.mgdl * (1 - targetTolerance);
+        final hi = target.mgdl * (1 + targetTolerance);
+        if (g >= lo && g <= hi) inTarget++;
+      }
+    }
 
     var appliedSum = 0.0;
     var appliedN = 0;
@@ -130,24 +176,7 @@ class HistoryStats {
     var deltaN = 0;
     var carbsSum = 0.0;
     var carbsN = 0;
-
-    BrazilTime.ensureInitialized();
-    final location = BrazilTime.location;
-
     for (final e in entries) {
-      final g = e.glucoseMgdl;
-      glucoseSum += g;
-      if (g < minG) minG = g;
-      if (g > maxG) maxG = g;
-
-      if (profile != null) {
-        final br = tz.TZDateTime.from(e.recordedAt.toUtc(), location);
-        final target = resolver.resolve(profile, nowBr: br);
-        final lo = target.mgdl * (1 - targetTolerance);
-        final hi = target.mgdl * (1 + targetTolerance);
-        if (g >= lo && g <= hi) inTarget++;
-      }
-
       final applied = e.appliedInsulin;
       if (applied != null) {
         appliedSum += applied;
@@ -162,7 +191,6 @@ class HistoryStats {
         deltaSum += recommended - applied;
         deltaN++;
       }
-
       final carbs = (e.gptRawResponse?['carboidratos_g'] as num?)?.toDouble();
       if (carbs != null) {
         carbsSum += carbs;
@@ -170,14 +198,19 @@ class HistoryStats {
       }
     }
 
-    final n = entries.length;
+    final n = samples.length;
+    final avg = n == 0 ? null : glucoseSum / n;
     return HistoryStats(
       count: n,
-      avgGlucose: glucoseSum / n,
+      avgGlucose: avg,
       minGlucose: minG,
       maxGlucose: maxG,
-      inTargetPercent: profile == null ? null : (inTarget / n) * 100,
+      inTargetPercent:
+          profile == null || n == 0 ? null : (inTarget / n) * 100,
       inTargetCount: inTarget,
+      tirPercent: n == 0 ? null : (tir / n) * 100,
+      tirCount: tir,
+      gmiPercent: estimateGmi(avg),
       totalAppliedU: appliedSum,
       avgAppliedU: appliedN == 0 ? null : appliedSum / appliedN,
       appliedCount: appliedN,
@@ -189,5 +222,28 @@ class HistoryStats {
       carbsCount: carbsN,
       dayTargetMgdl: profile?.targetGlucoseMgdl,
     );
+  }
+
+  static HistoryStats fromEntries(
+    List<Entry> entries, {
+    Profile? profile,
+    TargetResolver resolver = const TargetResolver(),
+  }) {
+    return compute(entries: entries, profile: profile, resolver: resolver);
+  }
+
+  /// Downsample dense CGM series for charting (keeps first/last).
+  static List<GlucoseSample> downsample(
+    List<GlucoseSample> samples, {
+    int maxPoints = 500,
+  }) {
+    if (samples.length <= maxPoints) return samples;
+    final step = samples.length / maxPoints;
+    final out = <GlucoseSample>[];
+    for (var i = 0; i < maxPoints - 1; i++) {
+      out.add(samples[(i * step).floor()]);
+    }
+    out.add(samples.last);
+    return out;
   }
 }

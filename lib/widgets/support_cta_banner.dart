@@ -16,6 +16,7 @@ class SupportCtaBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     if (!visible || !RevenueCatConfig.isConfigured) {
       return const SizedBox.shrink();
     }
@@ -28,9 +29,9 @@ class SupportCtaBanner extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: AppColors.primarySoft,
+            color: colors.primarySoft,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFC5D0DB)),
+            border: Border.all(color: colors.outline),
           ),
           child: Row(
             children: [
@@ -39,8 +40,8 @@ class SupportCtaBanner extends StatelessWidget {
                 color: AppColors.primaryDark,
                 size: 20,
               ),
-              const SizedBox(width: 10),
-              const Expanded(
+              SizedBox(width: 10),
+              Expanded(
                 child: Text(
                   'O app é gratuito — apoie se puder. '
                   'Toque para ver os planos.',
@@ -51,7 +52,7 @@ class SupportCtaBanner extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: 4),
               Icon(
                 Icons.chevron_right,
                 color: AppColors.primaryDark.withValues(alpha: 0.7),
