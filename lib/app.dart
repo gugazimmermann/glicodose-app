@@ -16,8 +16,8 @@ import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/export_service.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
 import 'package:diabetes_app/services/iob_badge_service.dart';
+import 'package:diabetes_app/services/librelinkup_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
-import 'package:diabetes_app/services/reminder_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
 import 'package:diabetes_app/services/support_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
@@ -30,8 +30,8 @@ class AppServices {
         entries = EntryService(client),
         insulin = InsulinService(client),
         speech = SpeechService(client),
+        libre = LibreLinkUpService(client),
         support = SupportService(),
-        reminders = ReminderService(),
         export = const ExportService() {
     iobBadge = IobBadgeService(entries: entries, profile: profile);
   }
@@ -41,8 +41,8 @@ class AppServices {
   final EntryService entries;
   final InsulinService insulin;
   final SpeechService speech;
+  final LibreLinkUpService libre;
   final SupportService support;
-  final ReminderService reminders;
   final ExportService export;
   late final IobBadgeService iobBadge;
 
@@ -115,10 +115,6 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
     unawaited(() async {
       await services.iobBadge.ensureReady();
       await services.iobBadge.refresh();
-      try {
-        final settings = await services.reminders.loadSettings();
-        await services.reminders.saveAndReschedule(settings);
-      } catch (_) {}
     }());
     _startBadgeTimer();
     final userId = services.auth.currentUser?.id;

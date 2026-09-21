@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
-import 'package:diabetes_app/screens/reminders_screen.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
@@ -507,28 +506,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         : () {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(
-                                builder: (_) => RemindersScreen(
-                                  reminderService: widget.services.reminders,
+                                builder: (_) => HealthImportScreen(
+                                  services: widget.services,
                                 ),
                               ),
                             );
                           },
-                    icon: const Icon(Icons.notifications_active_outlined),
-                    label: const Text('Lembretes'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _saving
-                        ? null
-                        : () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const HealthImportScreen(),
-                              ),
-                            );
-                          },
                     icon: const Icon(Icons.monitor_heart_outlined),
-                    label: const Text('Saúde e CGM'),
+                    label: const Text('Linkar Sensor'),
                   ),
                   const SizedBox(height: 16),
                   OutlinedButton.icon(

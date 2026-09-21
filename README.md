@@ -10,10 +10,9 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou
 - Ajuste de carbs na tela de resultado e recálculo local
 - Avisos de hipoglicemia e dose 0 por IOB
 - Histórico com gráficos, exportação **CSV** e relatório para consulta
-- Lembretes diários de glicemia/refeição (notificações locais)
+- Linkar Sensor (LibreLinkUp) com glicose atual na Dose
 - Vínculo com médico por código de 6 caracteres
 - Apoiar (IAP via RevenueCat)
-- Stub **Saúde e CGM** (R4 — importação futura)
 
 ## Pré-requisitos
 
@@ -27,11 +26,9 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou
 No SQL Editor do Supabase (ou `supabase db push` a partir desta pasta), execute as migrations na ordem:
 
 1. [`001_init.sql`](supabase/migrations/001_init.sql) … até
-2. [`012_rx_ai_ops.sql`](supabase/migrations/012_rx_ai_ops.sql)
+2. [`013_librelinkup.sql`](supabase/migrations/013_librelinkup.sql)
 
-A **012** adiciona: Rx editável ampliada para médicos, audit log de prescrição, `patient_ai_analyses`, `ai_usage_logs`, doações de pacientes no admin e RPC `get_admin_ai_stats`.
-
-Isso cria `profiles`, `entries`, RLS, bucket `food-photos`, IOB, billing e ops de IA.
+A **013** adiciona credenciais LibreLinkUp, tabela `glicemias` e Realtime.
 
 ## 2. Edge Functions
 
@@ -86,7 +83,7 @@ supabase functions deploy revenuecat-webhook
 3. Dose: glicose + alimento (texto/foto/**Falar**) → calcular
 4. Revisar carbs (confiança IA), confirmar insulina aplicada
 5. Histórico: lista, gráficos, exportar CSV/relatório
-6. Perfil: lembretes, Saúde/CGM (em breve), Apoiar, sair
+6. Perfil: Linkar Sensor, Apoiar, sair
 
 ## Roadmap
 
@@ -97,20 +94,20 @@ Specs em [`docs/releases/`](docs/releases/).
 | R0 IOB / disclaimer | Feito |
 | R1 híbrido (IA = carbs) | Feito |
 | R2 gráficos | Feito |
-| R3 lembretes + export | Feito (esta versão) |
-| R4 Health / CGM | Stub no app |
+| R3 export CSV/relatório | Feito |
+| R4 LibreLinkUp (Linkar Sensor) | Feito |
 
 ## Estrutura
 
 ```
 lib/
   config/          # Supabase + RevenueCat
-  models/          # Profile, Entry, InsulinRecommendation
-  services/        # Auth, Entry, Insulin, IOB, Reminders, Export, Support…
-  screens/         # Dose, Histórico, Perfil, Lembretes, Saúde…
+  models/          # Profile, Entry, InsulinRecommendation, LibreGlucose
+  services/        # Auth, Entry, Insulin, IOB, LibreLinkUp, Export, Support…
+  screens/         # Dose, Histórico, Perfil, Linkar Sensor, Apoiar…
 supabase/
-  migrations/      # 001 … 012
-  functions/       # recommend-insulin, transcribe-food, revenuecat-webhook
+  migrations/      # 001 … 013
+  functions/       # recommend-insulin, transcribe-food, revenuecat-webhook, librelinkup-*
 docs/
   iap-store-setup.md
   releases/

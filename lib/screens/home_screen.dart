@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -5,7 +7,9 @@ import 'package:uuid/uuid.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
+import 'package:diabetes_app/models/libre_glucose.dart';
 import 'package:diabetes_app/screens/dose_result_screen.dart';
+import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/brazil_time.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
@@ -50,15 +54,23 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSupporter = false;
   String? _error;
   String? _glucoseWarning;
+  bool _glucoseManuallyEdited = false;
+  String? _autoFilledGlucose;
+  bool _libreConnected = false;
+  bool _libreSyncing = false;
+  LibreGlucoseReading? _libreReading;
+  StreamSubscription<LibreGlucoseReading?>? _libreSub;
 
   @override
   void initState() {
     super.initState();
     _refreshIob();
+    unawaited(_initLibre());
   }
 
   @override
   void dispose() {
+    _libreSub?.cancel();
     if (_listening) {
       widget.services.speech.cancelRecording();
     }
@@ -66,6 +78,92 @@ class _HomeScreenState extends State<HomeScreen> {
     _foodController.dispose();
     _carbsController.dispose();
     super.dispose();
+  }
+
+  Future<void> _initLibre() async {
+    try {
+      final status = await widget.services.libre.status();
+      if (!mounted) return;
+      setState(() => _libreConnected = status.connected);
+      if (!status.connected) return;
+
+      if (status.latest != null) {
+        _applyLibreReading(status.latest!);
+      }
+
+      _libreSub?.cancel();
+      _libreSub = widget.services.libre.watchLatestGlucose().listen((reading) {
+        if (!mounted || reading == null) return;
+        _applyLibreReading(reading);
+      });
+
+      await _syncLibre(silent: true);
+    } catch (_) {
+      // Libre is optional; Dose still works with manual glucose.
+    }
+  }
+
+  void _applyLibreReading(
+    LibreGlucoseReading reading, {
+    bool force = false,
+  }) {
+    final text = reading.glucoseMgdl.toString();
+    final current = _glucoseController.text.trim();
+    final stillAuto =
+        current.isEmpty || current == (_autoFilledGlucose ?? '');
+    final canFill = force || !_glucoseManuallyEdited || stillAuto;
+
+    setState(() {
+      _libreReading = reading;
+      _libreConnected = true;
+      if (canFill) {
+        _glucoseController.value = TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        );
+        _autoFilledGlucose = text;
+        _glucoseManuallyEdited = false;
+      }
+    });
+    if (canFill) {
+      _updateGlucoseWarning(text);
+    }
+  }
+
+  Future<void> _syncLibre({bool silent = false, bool forceFill = false}) async {
+    if (_libreSyncing) return;
+    setState(() => _libreSyncing = true);
+    try {
+      final reading = await widget.services.libre.syncNow();
+      if (!mounted) return;
+      _applyLibreReading(reading, force: forceFill);
+    } catch (e) {
+      if (!mounted) return;
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(userFacingError(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _libreSyncing = false);
+    }
+  }
+
+  void _onGlucoseChanged(String value) {
+    final trimmed = value.trim();
+    _glucoseManuallyEdited =
+        trimmed.isNotEmpty && trimmed != (_autoFilledGlucose ?? '');
+    _updateGlucoseWarning(value);
+  }
+
+  Future<void> _openLinkarSensor() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => HealthImportScreen(services: widget.services),
+      ),
+    );
+    if (!mounted) return;
+    await _initLibre();
   }
 
   void _reportSpeechIssue(String message) {
@@ -485,7 +583,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             if (n == null || n <= 0) return 'Valor inválido';
                             return null;
                           },
-                          onChanged: _updateGlucoseWarning,
+                          onChanged: _onGlucoseChanged,
                         ),
                       ),
                       const Text(
@@ -499,6 +597,61 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
+                if (_libreConnected) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          () {
+                            final r = _libreReading;
+                            if (r == null) return 'LibreLinkUp conectado';
+                            final parts = <String>[
+                              'Libre',
+                              if (r.trendLabel.isNotEmpty) r.trendLabel,
+                              if (r.ageLabel.isNotEmpty) r.ageLabel,
+                            ];
+                            return parts.join(' ');
+                          }(),
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _openLinkarSensor,
+                        child: const Text('Gerenciar'),
+                      ),
+                      IconButton(
+                        tooltip: 'Atualizar do Libre',
+                        onPressed: _libreSyncing
+                            ? null
+                            : () => unawaited(
+                                  _syncLibre(silent: false, forceFill: true),
+                                ),
+                        icon: _libreSyncing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.sync, size: 20),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _openLinkarSensor,
+                    icon: const Icon(Icons.sensors, size: 18),
+                    label: const Text('Linkar Sensor'),
+                  ),
+                ],
                 if (_glucoseWarning != null) ...[
                   const SizedBox(height: 10),
                   Text(

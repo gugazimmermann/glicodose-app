@@ -10,3 +10,13 @@ verify_jwt = true
 # Authenticated via REVENUECAT_WEBHOOK_AUTH (Authorization header), not JWT.
 [functions.revenuecat-webhook]
 verify_jwt = false
+
+[functions.librelinkup-connect]
+verify_jwt = true
+
+[functions.librelinkup-sync]
+verify_jwt = true
+
+# Authenticated via LIBRELINKUP_CRON_SECRET (Authorization header), not JWT.
+[functions.librelinkup-cron]
+verify_jwt = false
