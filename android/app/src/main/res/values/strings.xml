@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="glicodose_widget_description">Glicose Libre e insulina rápida ativa (IOB)</string>
+    <string name="glicodose_widget_label">GlicoDose</string>
+</resources>

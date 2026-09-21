@@ -72,6 +72,14 @@
 		<string>Precisamos da galeria para selecionar a foto do alimento ou rótulo.</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Precisamos do microfone para descrever o alimento por voz.</string>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>fetch</string>
+		</array>
+		<key>BGTaskSchedulerPermittedIdentifiers</key>
+		<array>
+			<string>com.pravera.flutter_foreground_task.refresh</string>
+		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
 	</dict>

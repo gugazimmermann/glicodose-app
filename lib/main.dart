@@ -10,6 +10,8 @@ import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/config/supabase_config.dart';
 import 'package:diabetes_app/services/brazil_time.dart';
 import 'package:diabetes_app/services/iob_background.dart';
+import 'package:diabetes_app/services/iob_foreground_task.dart';
+import 'package:diabetes_app/services/status_home_widget_callback.dart';
 
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +20,9 @@ Future<void> main() async {
   _installErrorHandlers();
 
   if (!kIsWeb) {
+    IobForegroundTask.init();
     await Workmanager().initialize(iobBackgroundCallbackDispatcher);
+    await registerStatusHomeWidgetCallback();
   }
 
   if (!SupabaseConfig.isConfigured) {

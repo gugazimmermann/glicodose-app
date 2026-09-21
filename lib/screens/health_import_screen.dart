@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/libre_glucose.dart';
+import 'package:diabetes_app/services/status_home_widget_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
+import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 
@@ -73,6 +75,7 @@ class _HealthImportScreenState extends State<HealthImportScreen> {
           _emailController.text = status.email!;
         }
       });
+      await _publishWidgetFromStatus(status);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = userFacingError(e));
@@ -140,6 +143,13 @@ class _HealthImportScreenState extends State<HealthImportScreen> {
         _status = LibreConnectionStatus.disconnected;
         _passwordController.clear();
       });
+      await StatusHomeWidgetService.publish(
+        libreConnected: false,
+        clearGlucose: true,
+        iobU: asWholeDose(widget.services.iobLive.snapshot.value.iobU),
+        clearError: true,
+      );
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('LibreLinkUp desconectado')),
       );
@@ -169,6 +179,24 @@ class _HealthImportScreenState extends State<HealthImportScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _publishWidgetFromStatus(LibreConnectionStatus status) async {
+    final iobU = asWholeDose(widget.services.iobLive.snapshot.value.iobU);
+    if (!status.connected) {
+      await StatusHomeWidgetService.publish(
+        libreConnected: false,
+        clearGlucose: true,
+        iobU: iobU,
+      );
+      return;
+    }
+    await StatusHomeWidgetService.publish(
+      libreConnected: true,
+      reading: status.latest,
+      iobU: iobU,
+      clearError: true,
+    );
   }
 
   @override

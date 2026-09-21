@@ -12,6 +12,7 @@ import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/brazil_time.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
+import 'package:diabetes_app/services/status_home_widget_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -105,10 +106,26 @@ class _HomeScreenState extends State<HomeScreen> {
       final status = await widget.services.libre.status();
       if (!mounted) return;
       setState(() => _libreConnected = status.connected);
-      if (!status.connected) return;
+      if (!status.connected) {
+        unawaited(
+          StatusHomeWidgetService.publish(
+            libreConnected: false,
+            clearGlucose: true,
+            iobU: asWholeDose(_iobLive.snapshot.value.iobU),
+          ),
+        );
+        return;
+      }
 
       if (status.latest != null) {
         _applyLibreReading(status.latest!);
+      } else {
+        unawaited(
+          StatusHomeWidgetService.publish(
+            libreConnected: true,
+            iobU: asWholeDose(_iobLive.snapshot.value.iobU),
+          ),
+        );
       }
 
       _libreSub?.cancel();
@@ -148,6 +165,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (canFill) {
       _updateGlucoseWarning(text);
     }
+    unawaited(
+      StatusHomeWidgetService.publish(
+        libreConnected: true,
+        reading: reading,
+        iobU: asWholeDose(_iobLive.snapshot.value.iobU),
+      ),
+    );
   }
 
   Future<void> _syncLibre({bool silent = false, bool forceFill = false}) async {

@@ -1,17 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/iob_background.dart';
 import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/iob_cache.dart';
+import 'package:diabetes_app/services/iob_foreground_task.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
+import 'package:diabetes_app/services/status_home_widget_service.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
 /// Owns live IOB state: network refresh, 1-minute local ticks, badge sync,
-/// and Android background scheduling.
+/// Android foreground service, and Workmanager fallback.
 class IobLiveController {
   IobLiveController({
     required EntryService entries,
@@ -36,30 +39,56 @@ class IobLiveController {
   final ValueNotifier<bool> failed = ValueNotifier<bool>(false);
 
   Timer? _timer;
-  bool _started = false;
+  bool _listeningTaskData = false;
   List<IobCachedDose> _doses = const [];
   double _durationHours = 4.0;
 
-  /// Start periodic local recompute (call on login).
+  /// Start periodic local recompute (call on login). Always rearms the timer.
   void start() {
-    if (_started) return;
-    _started = true;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(minutes: 1), (_) {
       unawaited(tick());
     });
+    _ensureTaskDataListener();
   }
 
-  /// Stop timer and clear UI state (call on logout). Does not clear badge
-  /// by itself — callers should also [clear].
+  void _ensureTaskDataListener() {
+    if (_listeningTaskData || kIsWeb) return;
+    FlutterForegroundTask.addTaskDataCallback(_onTaskData);
+    _listeningTaskData = true;
+  }
+
+  void _removeTaskDataListener() {
+    if (!_listeningTaskData) return;
+    FlutterForegroundTask.removeTaskDataCallback(_onTaskData);
+    _listeningTaskData = false;
+  }
+
+  void _onTaskData(Object data) {
+    if (data is! Map) return;
+    final raw = data[IobForegroundTask.dataKeyIobU];
+    if (raw is! num) return;
+    final n = asWholeDose(raw);
+    // Recompute full snapshot from cache so contributions stay accurate.
+    unawaited(() async {
+      final snap = await IobCache.recompute();
+      snapshot.value = snap;
+      if (n <= 0) {
+        await _badge.applyCount(0);
+        await IobBackground.cancel();
+      }
+    }());
+  }
+
+  /// Stop timer (call on logout / detached). Does not clear badge by itself.
   void stop() {
-    _started = false;
     _timer?.cancel();
     _timer = null;
   }
 
   Future<void> clear() async {
     stop();
+    _removeTaskDataListener();
     _doses = const [];
     _durationHours = 4.0;
     snapshot.value = IobSnapshot.empty;
@@ -67,10 +96,12 @@ class IobLiveController {
     loading.value = false;
     await IobCache.clear();
     await IobBackground.cancel();
+    await IobForegroundTask.stop();
     await _badge.clear();
+    await StatusHomeWidgetService.clear();
   }
 
-  /// Fetch profile + recent entries, persist cache, update UI + badge.
+  /// Fetch profile + recent entries, persist cache, update UI + badge + FGS.
   Future<void> refreshFromNetwork() async {
     loading.value = true;
     failed.value = false;
@@ -99,8 +130,8 @@ class IobLiveController {
       );
       await IobCache.save(doses: _doses, durationHours: duration);
       await _publish(snap);
-      await _syncBackgroundSchedule(snap);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('IobLiveController.refreshFromNetwork failed: $e\n$st');
       // Fall back to local cache if network fails.
       final cached = await IobCache.load();
       if (cached != null) {
@@ -137,25 +168,29 @@ class IobLiveController {
       now: DateTime.now(),
     );
     await _publish(snap);
-    await _syncBackgroundSchedule(snap);
   }
 
   Future<void> _publish(IobSnapshot snap) async {
     snapshot.value = snap;
     final n = asWholeDose(snap.iobU);
-    await _badge.applyCount(n > 0 ? n : 0);
-  }
-
-  Future<void> _syncBackgroundSchedule(IobSnapshot snap) async {
-    if (asWholeDose(snap.iobU) > 0) {
+    unawaited(StatusHomeWidgetService.publishIobTick(n));
+    if (n > 0) {
+      final fgsOk = await IobForegroundTask.ensureRunning(n);
+      // When FGS is up it owns the status notification (with showBadge).
+      // If FGS failed to start, fall back to the local ongoing notification
+      // so the launcher still gets a badge/dot via Notification.number.
+      await _badge.applyCount(n, skipNotification: fgsOk);
       await IobBackground.ensureScheduled();
     } else {
+      await IobForegroundTask.stop();
+      await _badge.applyCount(0);
       await IobBackground.cancel();
     }
   }
 
   void dispose() {
     stop();
+    _removeTaskDataListener();
     snapshot.dispose();
     loading.dispose();
     failed.dispose();

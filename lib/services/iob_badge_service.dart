@@ -6,16 +6,16 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:diabetes_app/services/entry_service.dart';
+import 'package:diabetes_app/services/iob_foreground_task.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
 /// Keeps the launcher icon badge in sync with active rapid insulin (IOB).
 ///
-/// On many Android launchers (Pixel/stock, HyperOS), `app_badge_plus` alone is
-/// a no-op — a local notification with [AndroidNotificationDetails.number] is
-/// required for the icon badge/dot. Pixel still shows only a dot on the icon;
-/// an ongoing status notification carries the readable `~N U` count.
+/// While IOB > 0 on Android, the status notification is owned by
+/// [IobForegroundTask] (real FGS). This service still updates the launcher
+/// badge and cancels the legacy local-notification fallback.
 class IobBadgeService {
   IobBadgeService({
     required EntryService entries,
@@ -103,17 +103,45 @@ class IobBadgeService {
     } catch (_) {}
   }
 
-  /// Updates launcher badge + ongoing status notification.
-  Future<void> applyCount(int n) async {
+  /// Updates launcher badge. By default also syncs the legacy local
+  /// notification unless [skipNotification] is true (FGS owns the status bar)
+  /// or the FGS is already running.
+  Future<void> applyCount(int n, {bool skipNotification = false}) async {
     await _initNotifications();
-    await _applyBadge(n, _notifications);
+    await _applyLauncherBadge(n);
+
+    final fgsRunning = await IobForegroundTask.isRunning;
+    if (skipNotification || fgsRunning) {
+      // Cancel any leftover legacy ongoing notification to avoid duplicates.
+      await _cancelLegacyNotification();
+      return;
+    }
+
+    await _syncNotification(n, _notifications);
   }
 
   /// Same as [applyCount] but usable from a Workmanager isolate (no DI).
+  /// Prefer restarting the FGS when IOB > 0; falls back to local notification.
   static Future<void> applyCountStandalone(int n) async {
+    try {
+      await AppBadgePlus.updateBadge(n);
+    } catch (_) {}
+
+    if (n > 0) {
+      await IobForegroundTask.ensureRunning(n);
+      // Cancel legacy channel notification if any.
+      final plugin = FlutterLocalNotificationsPlugin();
+      await _initNotificationsPlugin(plugin);
+      try {
+        await plugin.cancel(id: notificationId);
+      } catch (_) {}
+      return;
+    }
+
+    await IobForegroundTask.stop();
     final plugin = FlutterLocalNotificationsPlugin();
     await _initNotificationsPlugin(plugin);
-    await _applyBadge(n, plugin);
+    await _syncNotification(0, plugin);
   }
 
   Future<void> _initNotifications() async {
@@ -146,17 +174,17 @@ class IobBadgeService {
     }
   }
 
-  static Future<void> _applyBadge(
-    int n,
-    FlutterLocalNotificationsPlugin notifications,
-  ) async {
+  Future<void> _applyLauncherBadge(int n) async {
     try {
-      if (await AppBadgePlus.isSupported()) {
-        await AppBadgePlus.updateBadge(n);
-      }
+      await AppBadgePlus.updateBadge(n);
     } catch (_) {}
+  }
 
-    await _syncNotification(n, notifications);
+  Future<void> _cancelLegacyNotification() async {
+    if (kIsWeb) return;
+    try {
+      await _notifications.cancel(id: notificationId);
+    } catch (_) {}
   }
 
   static Future<void> _syncNotification(
@@ -180,6 +208,7 @@ class IobBadgeService {
       } catch (_) {}
     }
 
+    // Legacy fallback only when FGS could not start (e.g. iOS / denied).
     await notifications.show(
       id: notificationId,
       title: '~$n U ativas',

@@ -4,8 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:workmanager/workmanager.dart';
 
-import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/iob_cache.dart';
+import 'package:diabetes_app/services/iob_foreground_task.dart';
+import 'package:diabetes_app/services/status_home_widget_service.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
 /// Top-level entry point for Workmanager isolates (must not be a class method).
@@ -16,26 +17,31 @@ void iobBackgroundCallbackDispatcher() {
       WidgetsFlutterBinding.ensureInitialized();
       DartPluginRegistrant.ensureInitialized();
       await IobBackground.recomputeAndApply();
-    } catch (_) {
-      // Never crash the worker isolate.
+    } catch (e, st) {
+      debugPrint('iobBackgroundCallbackDispatcher failed: $e\n$st');
+      return false;
     }
     return true;
   });
 }
 
-/// Unique / task names for the IOB background recompute job (Android).
+/// Coarse fallback when the FGS was killed or after reboot (Android).
 class IobBackground {
   IobBackground._();
 
   static const uniqueName = 'iob_live_periodic';
   static const taskName = 'iob_live_tick';
 
-  /// Shared path used by Workmanager (and tests): cache → badge/notification.
+  /// Shared path used by Workmanager: cache → restart FGS / clear badge.
   static Future<int> recomputeAndApply({DateTime? now}) async {
     final snap = await IobCache.recompute(now: now);
     final n = asWholeDose(snap.iobU);
-    await IobBadgeService.applyCountStandalone(n > 0 ? n : 0);
-    if (n <= 0) {
+    await StatusHomeWidgetService.publishIobTick(n);
+    if (n > 0) {
+      IobForegroundTask.init();
+      await IobForegroundTask.ensureRunning(n);
+    } else {
+      await IobForegroundTask.stop();
       await cancel();
     }
     return n > 0 ? n : 0;
@@ -48,11 +54,11 @@ class IobBackground {
         uniqueName,
         taskName,
         frequency: const Duration(minutes: 15),
-        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
         constraints: Constraints(networkType: NetworkType.notRequired),
       );
-    } catch (_) {
-      // Unsupported platform or OEM restriction.
+    } catch (e, st) {
+      debugPrint('IobBackground.ensureScheduled failed: $e\n$st');
     }
   }
 
@@ -60,6 +66,8 @@ class IobBackground {
     if (kIsWeb) return;
     try {
       await Workmanager().cancelByUniqueName(uniqueName);
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('IobBackground.cancel failed: $e\n$st');
+    }
   }
 }

@@ -54,6 +54,8 @@ dependencies:
   share_plus: ^13.3.0
   shared_preferences: ^2.5.5
   workmanager: ^0.10.10
+  flutter_foreground_task: ^11.0.3
+  home_widget: ^0.10.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

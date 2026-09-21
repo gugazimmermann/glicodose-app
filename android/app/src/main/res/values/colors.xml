@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="widget_background">#FFFFFF</color>
+    <color name="widget_border">#E2E8F0</color>
+    <color name="widget_ink">#121212</color>
+    <color name="widget_muted">#5A6570</color>
+    <color name="widget_primary">#2F7CC4</color>
+    <color name="widget_accent">#E31C23</color>
+    <color name="widget_soft">#E8F1F9</color>
+    <color name="widget_glucose_low">#E31C23</color>
+    <color name="widget_glucose_in_range">#2E7D32</color>
+    <color name="widget_glucose_high">#E65100</color>
 </resources>
