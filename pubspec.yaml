@@ -43,8 +43,6 @@ dependencies:
   record: ^7.1.1
   path_provider: ^2.1.5
   path: ^1.9.1
-  # 1.3+ migrates to Built-in Kotlin (AGP 9). Keep >=1.3.1 while Flutter uses
-  # android.builtInKotlin=false; enable builtInKotlin after Flutter 3.47+.
   app_badge_plus: ^1.3.1
   fl_chart: ^1.1.1
   purchases_flutter: ^10.13.1
@@ -57,7 +55,10 @@ dependencies:
   flutter_foreground_task: ^11.0.3
   home_widget: ^0.10.0
   pdf: ^3.13.1
-  health: ^13.3.2
+  # Path override: pub.dev 13.3.2 still applies kotlin-android (breaks AGP 9 built-in Kotlin).
+  # After `flutter pub get`, run: ./tool/patch_kgp_plugins.sh
+  health:
+    path: third_party/health
   firebase_core: ^4.4.0
   firebase_messaging: ^16.1.0
 dev_dependencies:
