@@ -238,7 +238,7 @@ class _StatsSummary extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: 1.55,
+            childAspectRatio: 1.4,
             children: [
               _MetricTile(
                 label: 'Glicose média',
@@ -317,6 +317,7 @@ class _MetricTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 12,
+              height: 1.2,
               color: AppColors.muted,
               fontWeight: FontWeight.w600,
             ),
@@ -328,17 +329,22 @@ class _MetricTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 16,
+              height: 1.2,
               fontWeight: FontWeight.w800,
               color: AppColors.ink,
             ),
           ),
           if (hint != null) ...[
-            const Spacer(),
+            const SizedBox(height: 4),
             Text(
               hint!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: AppColors.hint),
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.2,
+                color: AppColors.hint,
+              ),
             ),
           ],
         ],
