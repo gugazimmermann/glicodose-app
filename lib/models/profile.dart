@@ -188,6 +188,10 @@ class Profile {
       if (disclaimerAcceptedAt != null)
         'disclaimer_accepted_at':
             disclaimerAcceptedAt!.toUtc().toIso8601String(),
+      // share_code is server-owned; include only when already known so upsert
+      // never inserts a null into the NOT NULL column.
+      if (shareCode != null && shareCode!.trim().isNotEmpty)
+        'share_code': shareCode!.trim(),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
   }

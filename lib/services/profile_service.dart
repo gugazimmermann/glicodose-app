@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/libre_alert_service.dart';
@@ -8,6 +10,17 @@ class ProfileService {
   ProfileService(this._client);
 
   final SupabaseClient _client;
+
+  /// Same alphabet as `public.generate_share_code()` (no I/O/0/1).
+  static const _shareCodeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  static String _fallbackShareCode() {
+    final rnd = Random.secure();
+    return List.generate(
+      6,
+      (_) => _shareCodeAlphabet[rnd.nextInt(_shareCodeAlphabet.length)],
+    ).join();
+  }
 
   Future<void> _applyProfilePrefs(Profile profile, {bool applyTheme = true}) async {
     AppTime.setLocation(profile.timezone);
@@ -29,10 +42,12 @@ class ProfileService {
         .eq('id', userId)
         .maybeSingle();
 
-    if (data == null) return null;
-
-    if (data['share_code'] == null) {
-      await _client.rpc('ensure_share_code');
+    if (data == null || data['share_code'] == null) {
+      try {
+        await _client.rpc('ensure_share_code');
+      } catch (_) {
+        // Older DBs may not create the row; upsert will include a code.
+      }
       data = await _client
           .from('profiles')
           .select()
@@ -47,9 +62,21 @@ class ProfileService {
   }
 
   Future<Profile> upsert(Profile profile) async {
+    var toSave = profile;
+    if (toSave.shareCode == null || toSave.shareCode!.trim().isEmpty) {
+      String? code;
+      try {
+        final raw = await _client.rpc('ensure_share_code');
+        if (raw is String && raw.trim().isNotEmpty) code = raw.trim();
+      } catch (_) {
+        // Fall through to client-generated code for insert.
+      }
+      toSave = toSave.copyWith(shareCode: code ?? _fallbackShareCode());
+    }
+
     final data = await _client
         .from('profiles')
-        .upsert(profile.toJson())
+        .upsert(toSave.toJson())
         .select()
         .single();
     final saved = Profile.fromJson(data);

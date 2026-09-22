@@ -491,6 +491,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       SizedBox(height: 8),
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: AppTime.curatedLocations
                                 .any((e) => e.id == _timezone)
                             ? _timezone
@@ -502,7 +503,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           for (final z in AppTime.curatedLocations)
                             DropdownMenuItem(
                               value: z.id,
-                              child: Text(z.label, overflow: TextOverflow.ellipsis),
+                              child: Text(
+                                z.label,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                         ],
                         onChanged: (v) {
