@@ -97,11 +97,18 @@ class AppServices {
   /// Bumped whenever entries are created/updated/deleted so History reloads.
   final ValueNotifier<int> entriesRevision = ValueNotifier<int>(0);
 
+  /// Bumped when the local profile is refreshed (Realtime / resume).
+  final ValueNotifier<int> profileRevision = ValueNotifier<int>(0);
+
   /// Shell bottom-nav index: 0 Dose, 1 Histórico, 2 Apoiar, 3 Perfil.
   final ValueNotifier<int> selectedTabIndex = ValueNotifier<int>(0);
 
   void notifyEntriesChanged() {
     entriesRevision.value++;
+  }
+
+  void notifyProfileChanged() {
+    profileRevision.value++;
   }
 
   void goToHistoryTab() {
@@ -121,6 +128,7 @@ class DiabetesApp extends StatefulWidget {
 
 class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   StreamSubscription<AuthState>? _authSub;
+  StreamSubscription<Profile?>? _profileSub;
   bool _loggedIn = false;
   bool _showSplash = true;
 
@@ -141,6 +149,7 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     _authSub?.cancel();
+    _profileSub?.cancel();
     services.entriesRevision.removeListener(_onEntriesChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -167,6 +176,33 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
     unawaited(services.pushTokens.register());
     unawaited(_syncBasalReminders());
     unawaited(_syncHealthPrefToWidget());
+    _subscribeProfileRealtime();
+  }
+
+  void _subscribeProfileRealtime() {
+    _profileSub?.cancel();
+    _profileSub = services.profile.watchCurrent().listen(
+      (profile) {
+        if (profile == null || !_loggedIn) return;
+        unawaited(_applyRemoteProfile(profile));
+      },
+      onError: (_) {},
+    );
+  }
+
+  Future<void> _applyRemoteProfile(Profile profile) async {
+    try {
+      await services.reminders.syncBasalFromProfile(
+        enabled: profile.basalReminderEnabled,
+        timesMinutes: profile.basalTimesMinutes,
+        timezone: profile.timezone,
+        insulinName: profile.basalInsulinName,
+        doseU: profile.basalDoseU,
+      );
+      await WidgetHealthSync.setEnabled(profile.healthSyncEnabled);
+      unawaited(services.iobLive.refreshFromNetwork());
+      services.notifyProfileChanged();
+    } catch (_) {}
   }
 
   Future<void> _syncHealthPrefToWidget() async {
@@ -191,7 +227,18 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// Safety net when Realtime may have dropped while backgrounded.
+  Future<void> _refreshProfileOnResume() async {
+    try {
+      final profile = await services.profile.fetchCurrent();
+      if (profile == null) return;
+      await _applyRemoteProfile(profile);
+    } catch (_) {}
+  }
+
   void _onLoggedOut() {
+    _profileSub?.cancel();
+    _profileSub = null;
     unawaited(services.iobLive.clear());
     unawaited(services.support.logOut());
     unawaited(services.pushTokens.unregister());
@@ -211,6 +258,7 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
       services.iobLive.start();
       unawaited(services.iobLive.refreshFromNetwork());
       unawaited(WidgetHealthSync.refresh(lookback: const Duration(hours: 12)));
+      unawaited(_refreshProfileOnResume());
     } else if (state == AppLifecycleState.detached) {
       services.iobLive.stop();
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -61,10 +63,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _load();
+    widget.services.profileRevision.addListener(_onProfileRevision);
   }
 
   @override
   void dispose() {
+    widget.services.profileRevision.removeListener(_onProfileRevision);
     _nameController.dispose();
     _targetController.dispose();
     _targetNightController.dispose();
@@ -75,6 +79,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _basalInsulinController.dispose();
     _basalDoseController.dispose();
     super.dispose();
+  }
+
+  void _onProfileRevision() {
+    if (!mounted || _saving) return;
+    unawaited(_load());
   }
 
   TimeOfDay _minuteToTime(int minute) =>

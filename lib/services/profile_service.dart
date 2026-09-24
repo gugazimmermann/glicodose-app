@@ -61,6 +61,25 @@ class ProfileService {
     return profile;
   }
 
+  /// Realtime stream of the current user's profile row (RLS-filtered).
+  Stream<Profile?> watchCurrent({bool applyTheme = true}) {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      return Stream<Profile?>.value(null);
+    }
+
+    return _client
+        .from('profiles')
+        .stream(primaryKey: ['id'])
+        .eq('id', userId)
+        .asyncMap((rows) async {
+      if (rows.isEmpty) return null;
+      final profile = Profile.fromJson(Map<String, dynamic>.from(rows.first));
+      await _applyProfilePrefs(profile, applyTheme: applyTheme);
+      return profile;
+    });
+  }
+
   Future<Profile> upsert(Profile profile) async {
     var toSave = profile;
     if (toSave.shareCode == null || toSave.shareCode!.trim().isEmpty) {
