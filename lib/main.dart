@@ -29,7 +29,7 @@ Future<void> main() async {
     IobForegroundTask.init();
     await Workmanager().initialize(iobBackgroundCallbackDispatcher);
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      await HomeWidget.setAppGroupId('group.com.diabetes.diabetesApp');
+      await HomeWidget.setAppGroupId('group.app.glicodose');
     }
     await registerStatusHomeWidgetCallback();
     // Optional: no-op until google-services / GoogleService-Info are present.

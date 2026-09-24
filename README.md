@@ -8,7 +8,7 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou
 
 - Dose híbrida: IA estima carboidratos (com **confiança** baixa/média/alta); fórmula do perfil − IOB calcula a insulina
 - Ajuste de carbs na tela de resultado e recálculo local
-- Favoritos de refeição e avisos de hipoglicemia / dose 0 por IOB
+- Avisos de hipoglicemia / dose 0 por IOB
 - Insulina basal: registro separado (não entra no IOB rápido) + lembretes locais
 - Histórico com gráficos, exportação **CSV/PDF** e relatório para consulta
 - Linkar Sensor (LibreLinkUp) com glicose atual na Dose
@@ -108,7 +108,7 @@ supabase functions deploy revenuecat-webhook
 
 1. Cadastro / login (Supabase Auth)
 2. Perfil: tipo de diabetes, meta dia/noite, FSI, I:C, insulina rápida, basal, fuso, tema, alertas Libre, Health
-3. Dose: glicose (manual / Libre / Health) + alimento (texto/foto/**Falar**/favorito) → calcular
+3. Dose: glicose (manual / Libre / Health) + alimento (texto/foto/**Falar**) → calcular
 4. Revisar carbs (confiança IA), confirmar insulina aplicada; registrar basal se for o caso
 5. Histórico: lista, gráficos, exportar CSV/PDF
 6. Widget / badge / foreground task: IOB ao vivo

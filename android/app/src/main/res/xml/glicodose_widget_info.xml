@@ -5,6 +5,7 @@
   service / Workmanager — this is only a coarse fallback when those die.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="app.glicodose.GlicoDoseWidgetConfigureActivity"
     android:description="@string/glicodose_widget_description"
     android:initialLayout="@layout/glicodose_widget"
     android:minWidth="110dp"
@@ -13,4 +14,5 @@
     android:minResizeHeight="110dp"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
-    android:widgetCategory="home_screen" />
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="widget_background">#1C2630</color>
+    <!-- AppPalette.dark primarySoft / cardBorder -->
+    <color name="widget_background">#243447</color>
     <color name="widget_border">#2A3542</color>
     <color name="widget_ink">#F2F5F8</color>
     <color name="widget_muted">#A8B3BD</color>
     <color name="widget_primary">#2F7CC4</color>
     <color name="widget_accent">#E31C23</color>
     <color name="widget_soft">#243447</color>
-    <color name="widget_glucose_low">#E31C23</color>
+    <color name="widget_glucose_low">#FF8A80</color>
     <color name="widget_glucose_in_range">#66BB6A</color>
-    <color name="widget_glucose_high">#FF9800</color>
+    <color name="widget_glucose_high">#FFB74D</color>
 </resources>

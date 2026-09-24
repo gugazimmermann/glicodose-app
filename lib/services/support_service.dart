@@ -107,7 +107,7 @@ class SupportService {
   Future<void> openManageSubscriptions({String? productId}) async {
     final Uri uri;
     if (!kIsWeb && Platform.isAndroid) {
-      final packageName = 'com.diabetes.diabetes_app';
+      final packageName = 'app.glicodose';
       final sku = productId ?? SupportProducts.support10;
       uri = Uri.parse(
         'https://play.google.com/store/account/subscriptions'

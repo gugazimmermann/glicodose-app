@@ -9,6 +9,47 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type',
 }
 
+/** Whisper approx USD per minute — observability only (rounded by duration). */
+const WHISPER_USD_PER_MINUTE = 0.006
+
+async function logAiUsage(opts: {
+  supabaseUrl: string
+  serviceKey: string | undefined
+  userId: string
+  model: string
+  latencyMs: number
+  success: boolean
+  errorMessage?: string
+  meta?: Record<string, unknown>
+  estimatedCostUsd?: number
+}) {
+  if (!opts.serviceKey) {
+    console.error('ai_usage_logs: SUPABASE_SERVICE_ROLE_KEY missing')
+    return
+  }
+  try {
+    const admin = createClient(opts.supabaseUrl, opts.serviceKey)
+    const { error } = await admin.from('ai_usage_logs').insert({
+      function_name: 'transcribe-food',
+      user_id: opts.userId,
+      model: opts.model,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      latency_ms: opts.latencyMs,
+      success: opts.success,
+      error_message: opts.errorMessage ?? null,
+      estimated_cost_usd: opts.estimatedCostUsd ?? 0,
+      meta: opts.meta ?? {},
+    })
+    if (error) {
+      console.error('ai_usage_logs insert failed:', error.message)
+    }
+  } catch (err) {
+    console.error('ai_usage_logs insert threw:', err)
+  }
+}
+
 function decodeBase64(b64: string): Uint8Array {
   const cleaned = b64.replace(/^data:[^;]+;base64,/, '').replace(/\s/g, '')
   const binary = atob(cleaned)
@@ -37,6 +78,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     })
@@ -84,6 +126,8 @@ Deno.serve(async (req) => {
     form.append('language', 'pt')
     form.append('response_format', 'json')
 
+    const model = 'whisper-1'
+    const startedAt = Date.now()
     const openaiRes = await fetch(
       'https://api.openai.com/v1/audio/transcriptions',
       {
@@ -92,10 +136,26 @@ Deno.serve(async (req) => {
         body: form,
       },
     )
+    const latencyMs = Date.now() - startedAt
+
+    // Rough duration proxy: ~16 kbps for compressed voice → bytes / 2000 ≈ seconds
+    const approxSeconds = Math.max(1, bytes.byteLength / 2000)
+    const estimatedCostUsd =
+      (approxSeconds / 60) * WHISPER_USD_PER_MINUTE
 
     if (!openaiRes.ok) {
       const errText = await openaiRes.text()
       console.error('whisper error', openaiRes.status, errText)
+      await logAiUsage({
+        supabaseUrl,
+        serviceKey,
+        userId: user.id,
+        model,
+        latencyMs,
+        success: false,
+        errorMessage: errText.slice(0, 500),
+        meta: { bytes: bytes.byteLength },
+      })
       return json({ error: 'Falha ao transcrever áudio' }, 502)
     }
 
@@ -103,8 +163,33 @@ Deno.serve(async (req) => {
     const text =
       typeof openaiJson.text === 'string' ? openaiJson.text.trim() : ''
     if (!text) {
+      await logAiUsage({
+        supabaseUrl,
+        serviceKey,
+        userId: user.id,
+        model,
+        latencyMs,
+        success: false,
+        errorMessage: 'empty transcription',
+        meta: { bytes: bytes.byteLength },
+      })
       return json({ error: 'Nenhuma fala reconhecida' }, 422)
     }
+
+    await logAiUsage({
+      supabaseUrl,
+      serviceKey,
+      userId: user.id,
+      model,
+      latencyMs,
+      success: true,
+      estimatedCostUsd,
+      meta: {
+        bytes: bytes.byteLength,
+        approx_seconds: Math.round(approxSeconds),
+        text_len: text.length,
+      },
+    })
 
     return json({ text })
   } catch (error) {

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
-import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -180,12 +179,6 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
       widget.services.notifyEntriesChanged();
       await widget.services.iobLive.refreshFromNetwork();
       await widget.services.reminders.schedulePostBolusCheck();
-      final food = _entry.foodText?.trim();
-      if (food != null && food.isNotEmpty) {
-        await widget.services.favorites.add(
-          MealFavorite(text: food, carbsG: _rec.carboidratosG),
-        );
-      }
 
       // Best-effort Health write-back (insulin iOS-only; carbs both).
       unawaited(_writeHealthAfterConfirm(applied));

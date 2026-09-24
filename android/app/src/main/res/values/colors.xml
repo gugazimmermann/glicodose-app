@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
-    <color name="widget_background">#FFFFFF</color>
+    <!-- AppPalette.light primarySoft / cardBorder -->
+    <color name="widget_background">#E8F1F9</color>
     <color name="widget_border">#E2E8F0</color>
     <color name="widget_ink">#121212</color>
     <color name="widget_muted">#5A6570</color>

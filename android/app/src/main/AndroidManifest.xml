@@ -89,6 +89,16 @@
                 android:value="Shows remaining active rapid insulin (IOB) while the app is in the background." />
         </service>
 
+        <activity
+            android:name=".GlicoDoseWidgetConfigureActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/NormalTheme">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <receiver
             android:name=".GlicoDoseWidgetProvider"
             android:exported="true"

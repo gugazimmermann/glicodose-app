@@ -57,13 +57,12 @@ class DefaultFirebaseOptions {
     projectId: 'glicodose1',
     storageBucket: 'glicodose1.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyCGhA27kcv_5FBSszU_HkWiB1fCUGwQfLk',
     appId: '1:1090715856317:ios:eef673df790052d3a376d4',
     messagingSenderId: '1090715856317',
     projectId: 'glicodose1',
     storageBucket: 'glicodose1.firebasestorage.app',
-    iosBundleId: 'com.diabetes.diabetesApp',
+    iosBundleId: 'app.glicodose',
   );
 }

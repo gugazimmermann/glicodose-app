@@ -1,8 +1,23 @@
 import AppIntents
 import SwiftUI
+import UIKit
 import WidgetKit
 
-private let widgetGroupId = "group.com.diabetes.diabetesApp"
+private let widgetGroupId = "group.app.glicodose"
+/// AppColors.primary #2F7CC4
+private let appPrimary = Color(red: 0.184, green: 0.486, blue: 0.769)
+/// AppPalette.light.primarySoft #E8F1F9
+private let appPrimarySoft = Color(red: 0.910, green: 0.945, blue: 0.976)
+/// AppColors.success #2E7D32
+private let appSuccess = Color(red: 0.180, green: 0.490, blue: 0.196)
+
+struct GlicoDoseWidgetConfigIntent: WidgetConfigurationIntent {
+  static var title: LocalizedStringResource = "GlicoDose"
+  static var description = IntentDescription("Glicose Libre e insulina rápida ativa (IOB)")
+
+  @Parameter(title: "Fundo transparente", default: false)
+  var transparentBackground: Bool
+}
 
 struct GlicoDoseEntry: TimelineEntry {
   let date: Date
@@ -14,9 +29,10 @@ struct GlicoDoseEntry: TimelineEntry {
   let iobU: Int
   let syncing: Bool
   let lastError: String
+  let transparentBackground: Bool
 }
 
-struct Provider: TimelineProvider {
+struct Provider: AppIntentTimelineProvider {
   func placeholder(in context: Context) -> GlicoDoseEntry {
     GlicoDoseEntry(
       date: Date(),
@@ -27,21 +43,31 @@ struct Provider: TimelineProvider {
       glucoseAge: "agora",
       iobU: 2,
       syncing: false,
-      lastError: ""
+      lastError: "",
+      transparentBackground: false
     )
   }
 
-  func getSnapshot(in context: Context, completion: @escaping (GlicoDoseEntry) -> Void) {
-    completion(loadEntry(date: Date()))
+  func snapshot(
+    for configuration: GlicoDoseWidgetConfigIntent,
+    in context: Context
+  ) async -> GlicoDoseEntry {
+    loadEntry(date: Date(), transparentBackground: configuration.transparentBackground)
   }
 
-  func getTimeline(in context: Context, completion: @escaping (Timeline<GlicoDoseEntry>) -> Void) {
-    let entry = loadEntry(date: Date())
+  func timeline(
+    for configuration: GlicoDoseWidgetConfigIntent,
+    in context: Context
+  ) async -> Timeline<GlicoDoseEntry> {
+    let entry = loadEntry(
+      date: Date(),
+      transparentBackground: configuration.transparentBackground
+    )
     let next = Date().addingTimeInterval(60)
-    completion(Timeline(entries: [entry], policy: .after(next)))
+    return Timeline(entries: [entry], policy: .after(next))
   }
 
-  private func loadEntry(date: Date) -> GlicoDoseEntry {
+  private func loadEntry(date: Date, transparentBackground: Bool) -> GlicoDoseEntry {
     let prefs = UserDefaults(suiteName: widgetGroupId)
     let recordedIso = prefs?.string(forKey: "glucose_recorded_at")
     let age = refreshedAge(iso: recordedIso) ?? (prefs?.string(forKey: "glucose_age") ?? "")
@@ -54,7 +80,8 @@ struct Provider: TimelineProvider {
       glucoseAge: age,
       iobU: prefs?.integer(forKey: "iob_u") ?? 0,
       syncing: prefs?.bool(forKey: "syncing") ?? false,
-      lastError: prefs?.string(forKey: "last_error") ?? ""
+      lastError: prefs?.string(forKey: "last_error") ?? "",
+      transparentBackground: transparentBackground
     )
   }
 
@@ -80,11 +107,15 @@ struct Provider: TimelineProvider {
 struct GlicoDoseWidgetEntryView: View {
   var entry: Provider.Entry
 
+  private var chromeColor: Color {
+    entry.transparentBackground ? .accentColor : appPrimary
+  }
+
   private var glucoseColor: Color {
     if !entry.hasGlucose || entry.glucoseMgdl <= 0 { return .primary }
-    if entry.glucoseMgdl < 70 { return Color(red: 0.90, green: 0.11, blue: 0.14) }
-    if entry.glucoseMgdl > 180 { return Color(red: 0.90, green: 0.32, blue: 0.0) }
-    return Color(red: 0.18, green: 0.49, blue: 0.77)
+    if entry.glucoseMgdl < 70 { return Color(red: 0.89, green: 0.11, blue: 0.14) } // accent
+    if entry.glucoseMgdl > 180 { return Color(red: 0.90, green: 0.32, blue: 0.0) } // warning
+    return appSuccess
   }
 
   private var metaText: String {
@@ -101,7 +132,7 @@ struct GlicoDoseWidgetEntryView: View {
       HStack {
         Text("GlicoDose")
           .font(.caption.weight(.bold))
-          .foregroundColor(Color(red: 0.18, green: 0.49, blue: 0.77))
+          .foregroundColor(chromeColor)
         Spacer()
         if #available(iOSApplicationExtension 17.0, *) {
           Button(
@@ -114,6 +145,7 @@ struct GlicoDoseWidgetEntryView: View {
               .font(.caption.weight(.semibold))
           }
           .buttonStyle(.plain)
+          .tint(chromeColor)
         }
       }
 
@@ -160,19 +192,37 @@ struct GlicoDoseWidget: Widget {
   let kind: String = "GlicoDoseWidget"
 
   var body: some WidgetConfiguration {
-    StaticConfiguration(kind: kind, provider: Provider()) { entry in
+    AppIntentConfiguration(
+      kind: kind,
+      intent: GlicoDoseWidgetConfigIntent.self,
+      provider: Provider()
+    ) { entry in
       if #available(iOSApplicationExtension 17.0, *) {
         GlicoDoseWidgetEntryView(entry: entry)
-          .containerBackground(.fill.tertiary, for: .widget)
+          .modifier(GlicoDoseWidgetBackground(transparent: entry.transparentBackground))
       } else {
         GlicoDoseWidgetEntryView(entry: entry)
           .padding()
-          .background()
+          .background(entry.transparentBackground ? Color.clear : appPrimarySoft)
       }
     }
     .configurationDisplayName("GlicoDose")
     .description("Glicose Libre e insulina rápida ativa (IOB)")
     .supportedFamilies([.systemSmall, .systemMedium])
+  }
+}
+
+@available(iOSApplicationExtension 17.0, *)
+private struct GlicoDoseWidgetBackground: ViewModifier {
+  let transparent: Bool
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if transparent {
+      content.containerBackground(.clear, for: .widget)
+    } else {
+      content.containerBackground(appPrimarySoft, for: .widget)
+    }
   }
 }
 
@@ -189,7 +239,8 @@ struct GlicoDoseWidget_Previews: PreviewProvider {
         glucoseAge: "há 3 min",
         iobU: 3,
         syncing: false,
-        lastError: ""
+        lastError: "",
+        transparentBackground: false
       )
     )
     .previewContext(WidgetPreviewContext(family: .systemSmall))

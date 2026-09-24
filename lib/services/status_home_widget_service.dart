@@ -11,7 +11,7 @@ class StatusHomeWidgetService {
   StatusHomeWidgetService._();
 
   static const androidQualifiedName =
-      'com.diabetes.diabetes_app.GlicoDoseWidgetProvider';
+      'app.glicodose.GlicoDoseWidgetProvider';
   static const iosWidgetName = 'GlicoDoseWidget';
 
   static const keyLibreConnected = 'libre_connected';

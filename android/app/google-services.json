@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:1090715856317:android:59c82279a59e0797a376d4",
         "android_client_info": {
-          "package_name": "com.diabetes.diabetes_app"
+          "package_name": "app.glicodose"
         }
       },
       "oauth_client": [],

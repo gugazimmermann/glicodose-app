@@ -22,7 +22,6 @@ import 'package:diabetes_app/services/insulin_service.dart';
 import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/librelinkup_service.dart';
-import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/push_token_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
@@ -48,7 +47,6 @@ class AppServices {
       libre: LibreLinkUpService(client),
       support: SupportService(),
       export: const ExportService(),
-      favorites: MealFavoritesService(),
       reminders: DoseReminderService(),
       healthPlatform: HealthPlatformService(),
       pushTokens: PushTokenService(client),
@@ -73,7 +71,6 @@ class AppServices {
     required this.libre,
     required this.support,
     required this.export,
-    required this.favorites,
     required this.reminders,
     required this.healthPlatform,
     required this.pushTokens,
@@ -91,7 +88,6 @@ class AppServices {
   final LibreLinkUpService libre;
   final SupportService support;
   final ExportService export;
-  final MealFavoritesService favorites;
   final DoseReminderService reminders;
   final HealthPlatformService healthPlatform;
   final PushTokenService pushTokens;

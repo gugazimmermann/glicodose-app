@@ -19,7 +19,7 @@ void main() {
     test('isOwnSource detects GlicoDose echo', () {
       expect(HealthPlatformService.isOwnSource('GlicoDose'), isTrue);
       expect(
-        HealthPlatformService.isOwnSource('com.diabetes.diabetes_app'),
+        HealthPlatformService.isOwnSource('app.glicodose'),
         isTrue,
       );
       expect(HealthPlatformService.isOwnSource('LibreLink'), isFalse);

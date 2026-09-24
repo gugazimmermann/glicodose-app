@@ -16,7 +16,6 @@ import 'package:diabetes_app/services/dose_factor.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/libre_alert_service.dart';
-import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
@@ -65,7 +64,6 @@ class _HomeScreenState extends State<HomeScreen> {
   LibreGlucoseReading? _libreReading;
   StreamSubscription<LibreGlucoseReading?>? _libreSub;
   DoseSituation _situation = DoseSituation.none;
-  List<MealFavorite> _favorites = const [];
   Entry? _unconfirmed;
   bool _basalLoggedToday = false;
 
@@ -78,20 +76,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _iobLive.loading.addListener(_onIobChanged);
     _iobLive.failed.addListener(_onIobChanged);
     unawaited(_loadSupporterFlag());
-    unawaited(_loadFavorites());
     unawaited(_checkUnconfirmed());
     unawaited(_checkBasalToday());
     if (_iobLive.snapshot.value.iobU == 0 && !_iobLive.loading.value) {
       unawaited(_iobLive.refreshFromNetwork());
     }
     unawaited(_initLibre());
-  }
-
-  Future<void> _loadFavorites() async {
-    try {
-      final list = await widget.services.favorites.list();
-      if (mounted) setState(() => _favorites = list);
-    } catch (_) {}
   }
 
   Future<void> _checkUnconfirmed() async {
@@ -646,7 +636,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _situation = DoseSituation.none;
       });
       await _iobLive.refreshFromNetwork();
-      await _loadFavorites();
       await _checkUnconfirmed();
     } catch (e) {
       if (mounted) setState(() => _error = userFacingError(e));
@@ -1051,43 +1040,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: colors.muted,
                       height: 1.3,
                     ),
-                  ),
-                ],
-                if (_favorites.isNotEmpty) ...[
-                  SizedBox(height: 12),
-                  Text(
-                    'Favoritas',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: colors.ink,
-                    ),
-                  ),
-                  SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: _favorites.take(6).map((f) {
-                      return ActionChip(
-                        label: Text(
-                          f.text.length > 28
-                              ? '${f.text.substring(0, 28)}…'
-                              : f.text,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _foodController.text = f.text;
-                            if (f.carbsG != null) {
-                              _carbsController.text = formatWhole(f.carbsG);
-                              _useAi = false;
-                            } else {
-                              _useAi = true;
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
                   ),
                 ],
                 SizedBox(height: 12),

@@ -3,6 +3,14 @@
 Checklist operacional para criar os produtos nas lojas, configurar o RevenueCat
 e testar antes de produção. O app espera os IDs abaixo.
 
+## Identificadores do app
+
+| Plataforma | ID |
+| ---------- | -- |
+| Android (Play / RevenueCat) | `app.glicodose` |
+| iOS (App Store / RevenueCat) | `app.glicodose` |
+| App Group (widget iOS) | `group.app.glicodose` |
+
 ## Product IDs (iguais nas duas lojas e no RevenueCat)
 
 | Product ID     | Plano aproximado | Tipo                         |
@@ -21,32 +29,44 @@ Copy sugerida nas lojas: “Apoiar o GlicoDose” / “Apoiador” — **não** 
 ## 1. App Store Connect
 
 1. Agreements → Paid Apps ativo + dados bancários/fiscais.
-2. App → Subscriptions → criar o grupo **Apoio ao projeto**.
-3. Criar 4 assinaturas mensais com os Product IDs acima e preços BRL ~10/20/50/100.
-4. Localização PT-BR: nome “Apoio R$X/mês”, descrição explicando que o app continua gratuito e o valor ajuda a manter o serviço (IA/API).
-5. App Store Server Notifications V2 → URL do RevenueCat (dashboard RC → Integrations → Apple).
+2. Criar o app com Bundle ID **`app.glicodose`** (Apple Developer → Identifiers, se ainda não existir).
+3. App Groups: criar **`group.app.glicodose`** e habilitar no App ID + no extension do widget.
+4. App → Subscriptions → criar o grupo **Apoio ao projeto**.
+5. Criar 4 assinaturas mensais com os Product IDs acima e preços BRL ~10/20/50/100.
+6. Localização PT-BR: nome “Apoio R$X/mês”, descrição explicando que o app continua gratuito e o valor ajuda a manter o serviço (IA/API).
+7. App Store Server Notifications V2 → URL do RevenueCat (dashboard RC → Integrations → Apple).
 
 ## 2. Google Play Console
 
-1. Upload de um AAB (Internal testing) que já inclua o Billing (via `purchases_flutter`).
-2. Monetize → Subscriptions: criar assinatura(s) / base plans mensais com os mesmos Product IDs e preços BRL.
-3. Conta de serviço com permissão financeira → conectar no RevenueCat.
-4. Real-time developer notifications (Pub/Sub) → RevenueCat.
+1. Criar o app com package name **`app.glicodose`** (não dá para mudar depois).
+2. Upload de um AAB (Internal testing) que já inclua o Billing (via `purchases_flutter`).
+3. Monetize with Play → Products → Subscriptions:
+   - Criar assinatura(s) / base plans mensais com Product IDs `support_10` … `support_100` e preços BRL.
+4. Setup → API access → criar/vincular conta de serviço com permissão financeira → baixar JSON.
+5. Monetize → Monetization setup → Real-time developer notifications:
+   - Pub/Sub topic apontando para o RevenueCat (URL/tópico que o RC mostra em Integrations → Google).
+6. License testing: adicionar Gmails de teste antes de cobrar de verdade.
 
 ## 3. RevenueCat
 
-1. Criar projeto e apps iOS + Android (package `com.diabetes.diabetes_app` / bundle id do iOS).
-2. Importar os 4 produtos.
-3. Entitlement `supporter` → anexar os 4 produtos.
-4. Offering default com packages `support_10` … `support_100`.
-5. Copiar as **public SDK keys** (`appl_…` / `goog_…`) para o `.env` do app.
-6. Webhooks → URL da Edge Function:
+1. Criar projeto GlicoDose.
+2. **Add app → Google Play**
+   - Package name: **`app.glicodose`**
+   - Colar o JSON da conta de serviço do Play Console.
+3. **Add app → App Store**
+   - Bundle ID: **`app.glicodose`**
+   - Shared secret / App Store Connect API key conforme o assistente do RC.
+4. Importar / cadastrar os 4 produtos (`support_10` … `support_100`).
+5. Entitlement `supporter` → anexar os 4 produtos.
+6. Offering default (current) com packages `support_10` … `support_100`.
+7. Copiar as **public SDK keys** (`appl_…` / `goog_…`) para o `.env` do app.
+8. Webhooks → URL da Edge Function:
 
    `https://<PROJECT_REF>.supabase.co/functions/v1/revenuecat-webhook`
 
    Authorization: o mesmo valor de `REVENUECAT_WEBHOOK_AUTH` (secret no Supabase).
 
-7. No app, `Purchases.logIn(supabaseUserId)` amarra a compra ao UUID do perfil.
+9. No app, `Purchases.logIn(supabaseUserId)` amarra a compra ao UUID do perfil.
 
 ## 4. Supabase
 
@@ -87,7 +107,7 @@ UI: aba **Apoiar** (somente Android/iOS com keys configuradas). Também acessív
 ### Android
 
 1. Play Console → License testing (contas Gmail).
-2. Internal testing track com o AAB.
+2. Internal testing track com o AAB (`app.glicodose`).
 3. Comprar com conta de teste (não cobra de verdade).
 4. Mesmos checks de UI + `profiles` + restore.
 

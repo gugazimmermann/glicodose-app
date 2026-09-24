@@ -8,7 +8,7 @@
 PRODUCT_NAME = diabetes_app
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.diabetes.diabetesApp
+PRODUCT_BUNDLE_IDENTIFIER = app.glicodose
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.diabetes. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 GlicoDose. All rights reserved.

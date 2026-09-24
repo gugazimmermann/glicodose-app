@@ -7,7 +7,7 @@ class ThemePreferenceService {
   ThemePreferenceService._();
 
   static const prefsKey = 'theme_mode';
-  static const channel = MethodChannel('com.diabetes.diabetes_app/theme');
+  static const channel = MethodChannel('app.glicodose/theme');
 
   /// Notifier owned by [DiabetesApp]; updated on load/save.
   static final ValueNotifier<ThemeMode> mode =

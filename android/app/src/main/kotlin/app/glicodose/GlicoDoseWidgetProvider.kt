@@ -1,9 +1,11 @@
-package com.diabetes.diabetes_app
+package app.glicodose
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
@@ -30,6 +32,29 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_sync, syncIntent)
 
+            val transparent = GlicoDoseWidgetPrefs.isTransparent(context, widgetId)
+            if (transparent) {
+                views.setInt(R.id.widget_root, "setBackgroundResource", 0)
+                views.setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.TRANSPARENT)
+            } else {
+                views.setInt(
+                    R.id.widget_root,
+                    "setBackgroundResource",
+                    R.drawable.glicodose_widget_background,
+                )
+            }
+
+            val chrome = if (transparent) {
+                systemAccentColor(context)
+            } else {
+                ContextCompat.getColor(context, R.color.widget_primary)
+            }
+            views.setTextColor(R.id.widget_title, chrome)
+            views.setInt(R.id.widget_sync, "setColorFilter", chrome)
+
+            val defaultInk = ContextCompat.getColor(context, R.color.widget_ink)
+            val muted = ContextCompat.getColor(context, R.color.widget_muted)
+
             val connected = widgetData.getBoolean("libre_connected", false)
             val hasGlucose = widgetData.getBoolean("has_glucose", false)
             val glucose = widgetData.getInt("glucose_mgdl", 0)
@@ -38,8 +63,6 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
             val iob = widgetData.getInt("iob_u", 0)
             val syncing = widgetData.getBoolean("syncing", false)
             val lastError = widgetData.getString("last_error", "").orEmpty()
-
-            val defaultInk = ContextCompat.getColor(context, R.color.widget_ink)
 
             if (connected && hasGlucose && glucose > 0) {
                 views.setTextViewText(R.id.widget_glucose, glucose.toString())
@@ -69,7 +92,10 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
                 views.setTextViewText(R.id.widget_glucose_meta, "Libre off")
             }
 
+            views.setTextColor(R.id.widget_glucose_meta, muted)
             views.setTextViewText(R.id.widget_iob, "$iob U ativas")
+            views.setTextColor(R.id.widget_iob, defaultInk)
+            views.setTextColor(R.id.widget_status, muted)
 
             when {
                 syncing -> {
@@ -88,6 +114,34 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
 
             appWidgetManager.updateAppWidget(widgetId, views)
         }
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        super.onDeleted(context, appWidgetIds)
+        GlicoDoseWidgetPrefs.clear(context, appWidgetIds)
+    }
+
+    private fun systemAccentColor(context: Context): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return context.getColor(android.R.color.system_accent1_600)
+        }
+        val typedValue = TypedValue()
+        val theme = context.theme
+        if (theme.resolveAttribute(android.R.attr.colorAccent, typedValue, true)) {
+            return if (typedValue.resourceId != 0) {
+                ContextCompat.getColor(context, typedValue.resourceId)
+            } else {
+                typedValue.data
+            }
+        }
+        if (theme.resolveAttribute(android.R.attr.colorPrimary, typedValue, true)) {
+            return if (typedValue.resourceId != 0) {
+                ContextCompat.getColor(context, typedValue.resourceId)
+            } else {
+                typedValue.data
+            }
+        }
+        return ContextCompat.getColor(context, R.color.widget_primary)
     }
 
     private fun glucoseColorRes(glucoseMgdl: Int): Int = when {

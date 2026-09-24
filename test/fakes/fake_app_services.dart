@@ -20,7 +20,6 @@ import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/services/librelinkup_service.dart';
-import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/push_token_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
@@ -83,7 +82,6 @@ class FakeAppServices {
     );
     final support = SupportService();
     const export = ExportService();
-    final favorites = MealFavoritesService();
     final reminders = FakeDoseReminderService();
     final healthSvc = health ?? FakeHealthPlatformService();
     final push = FakePushTokenService(client);
@@ -105,7 +103,6 @@ class FakeAppServices {
       libre: libre,
       support: support,
       export: export,
-      favorites: favorites,
       reminders: reminders,
       healthPlatform: healthSvc,
       pushTokens: push,

@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.diabetes.diabetes_app"
+    namespace = "app.glicodose"
     // permission_handler 13+ requires compileSdk 37 (Flutter 3.44 default is 36).
     compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.diabetes.diabetes_app"
+        applicationId = "app.glicodose"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = maxOf(flutter.minSdkVersion, 26)

@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>API_KEY</key>
-	<string>AIzaSyCGhA27kcv_5FBSszU_HkWiB1fCUGwQfLk</string>
+	<string>AIzaSyCp12uu9hiMUlVGwuQspzy_E8h5gITiAyE</string>
 	<key>GCM_SENDER_ID</key>
-	<string>1090715856317</string>
+	<string>1020424802267</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.diabetes.diabetesApp</string>
+	<string>app.glicodose</string>
 	<key>PROJECT_ID</key>
-	<string>glicodose1</string>
+	<string>glicodose-guga</string>
 	<key>STORAGE_BUCKET</key>
-	<string>glicodose1.firebasestorage.app</string>
+	<string>glicodose-guga.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:1090715856317:ios:eef673df790052d3a376d4</string>
+	<string>1:1020424802267:ios:c354bf401bcbdfa77f21fe</string>
 </dict>
 </plist>

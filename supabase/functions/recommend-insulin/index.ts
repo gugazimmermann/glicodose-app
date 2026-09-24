@@ -46,11 +46,14 @@ async function logAiUsage(opts: {
   errorMessage?: string
   meta?: Record<string, unknown>
 }) {
-  if (!opts.serviceKey) return
+  if (!opts.serviceKey) {
+    console.error('ai_usage_logs: SUPABASE_SERVICE_ROLE_KEY missing')
+    return
+  }
   try {
     const admin = createClient(opts.supabaseUrl, opts.serviceKey)
     const total = opts.promptTokens + opts.completionTokens
-    await admin.from('ai_usage_logs').insert({
+    const { error } = await admin.from('ai_usage_logs').insert({
       function_name: 'recommend-insulin',
       user_id: opts.userId,
       model: opts.model,
@@ -66,8 +69,12 @@ async function logAiUsage(opts: {
       ),
       meta: opts.meta ?? {},
     })
-  } catch {
+    if (error) {
+      console.error('ai_usage_logs insert failed:', error.message)
+    }
+  } catch (err) {
     // Observability must not break the dose path
+    console.error('ai_usage_logs insert threw:', err)
   }
 }
 

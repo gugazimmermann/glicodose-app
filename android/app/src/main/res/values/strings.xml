@@ -2,4 +2,8 @@
 <resources>
     <string name="glicodose_widget_description">Glicose Libre e insulina rápida ativa (IOB)</string>
     <string name="glicodose_widget_label">GlicoDose</string>
+    <string name="glicodose_widget_configure_title">Configurar widget</string>
+    <string name="glicodose_widget_configure_subtitle">Escolha a aparência do widget na tela inicial.</string>
+    <string name="glicodose_widget_transparent_label">Fundo transparente</string>
+    <string name="glicodose_widget_configure_confirm">Confirmar</string>
 </resources>

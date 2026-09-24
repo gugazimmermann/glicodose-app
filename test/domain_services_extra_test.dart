@@ -15,7 +15,6 @@ import 'package:diabetes_app/services/export_service.dart';
 import 'package:diabetes_app/services/history_stats.dart';
 import 'package:diabetes_app/services/iob_cache.dart';
 import 'package:diabetes_app/services/libre_alert_logic.dart';
-import 'package:diabetes_app/services/meal_favorites_service.dart';
 import 'package:diabetes_app/services/supporter_webhook_mapping.dart';
 import 'package:diabetes_app/services/support_service.dart';
 import 'package:diabetes_app/services/target_resolver.dart';
@@ -358,40 +357,6 @@ void main() {
           now: DateTime.now(),
         ).iobU,
         0,
-      );
-    });
-  });
-
-  group('MealFavoritesService', () {
-    setUp(() {
-      SharedPreferences.setMockInitialValues({});
-    });
-
-    test('add/list/remove and ignores empty/corrupt', () async {
-      final service = MealFavoritesService();
-      await service.add(const MealFavorite(text: '  ', carbsG: 10));
-      expect(await service.list(), isEmpty);
-
-      await service.add(const MealFavorite(text: 'Pão', carbsG: 40));
-      await service.add(const MealFavorite(text: 'pão', carbsG: 35));
-      await service.add(const MealFavorite(text: 'Arroz', carbsG: 50));
-      var list = await service.list();
-      expect(list.map((e) => e.text), ['Arroz', 'pão']);
-      expect(list.first.carbsG, 50);
-      expect(list.last.carbsG, 35);
-      expect(list, hasLength(2));
-
-      await service.remove('ARROZ');
-      list = await service.list();
-      expect(list.single.text, 'pão');
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('meal_favorites_v1', ['not-json', '{"text":""}']);
-      expect(await service.list(), isEmpty);
-
-      expect(
-        MealFavorite.fromJson({'text': 'x', 'carbs_g': 12}).toJson()['carbs_g'],
-        12,
       );
     });
   });

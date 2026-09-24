@@ -1,6 +1,5 @@
-package com.diabetes.diabetes_app
+package app.glicodose
 
-import android.os.Bundle
 import androidx.appcompat.app.AppCompatDelegate
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -11,7 +10,7 @@ class MainActivity : FlutterFragmentActivity() {
     super.configureFlutterEngine(flutterEngine)
     MethodChannel(
       flutterEngine.dartExecutor.binaryMessenger,
-      "com.diabetes.diabetes_app/theme",
+      "app.glicodose/theme",
     ).setMethodCallHandler { call, result ->
       if (call.method != "setThemeMode") {
         result.notImplemented()
