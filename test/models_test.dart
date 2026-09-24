@@ -4,6 +4,7 @@ import 'package:diabetes_app/models/basal_dose.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/libre_glucose.dart';
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 
 void main() {
   group('Entry', () {
@@ -367,6 +368,12 @@ void main() {
       // 2000 out of range and 'x' skipped; keeps first two valid minutes.
       expect(full.basalTimesMinutes, [480, 1320]);
       expect(full.isComplete, isTrue);
+      expect(full.isfSchedule, [
+        const RatioSegment(startMinute: 0, value: 50),
+      ]);
+      expect(full.icSchedule, [
+        const RatioSegment(startMinute: 0, value: 10),
+      ]);
 
       final blankTz = Profile.fromJson({'id': 'u', 'timezone': '   '});
       expect(blankTz.timezone, 'America/Sao_Paulo');
@@ -376,6 +383,12 @@ void main() {
       final json = full.toJson();
       expect(json['disclaimer_accepted_at'], isNotNull);
       expect(json.containsKey('supporter_status'), isFalse);
+      expect(json['isf_schedule'], [
+        {'start_minute': 0, 'value': 50},
+      ]);
+      expect(json['ic_schedule'], [
+        {'start_minute': 0, 'value': 10},
+      ]);
 
       final cleared = full.copyWith(
         clearDisclaimer: true,

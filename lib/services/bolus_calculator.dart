@@ -1,13 +1,18 @@
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 import 'package:diabetes_app/services/target_resolver.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 class BolusCalculator {
-  const BolusCalculator({this.targetResolver = const TargetResolver()});
+  const BolusCalculator({
+    this.targetResolver = const TargetResolver(),
+    this.ratioResolver = const RatioScheduleResolver(),
+  });
 
   final TargetResolver targetResolver;
+  final RatioScheduleResolver ratioResolver;
 
   InsulinRecommendation calculate({
     required int glucoseMgdl,
@@ -20,8 +25,18 @@ class BolusCalculator {
   }) {
     final effective = targetResolver.resolve(profile, now: now);
     final target = effective.mgdl.toDouble();
-    final isf = profile.isfMgdlPerU ?? 50;
-    final ic = profile.icRatio ?? 10;
+    final isfResolved = ratioResolver.resolve(
+      profile.isfSchedule,
+      effective.minuteOfDay,
+      fallback: profile.isfMgdlPerU,
+    );
+    final icResolved = ratioResolver.resolve(
+      profile.icSchedule,
+      effective.minuteOfDay,
+      fallback: profile.icRatio,
+    );
+    final isf = isfResolved?.value ?? profile.isfMgdlPerU ?? 50;
+    final ic = icResolved?.value ?? profile.icRatio ?? 10;
     final step = profile.doseStep <= 0 ? 1.0 : profile.doseStep;
 
     final carbs = asWholeDose(carboidratosG).toDouble();
@@ -54,6 +69,10 @@ class BolusCalculator {
       'meta_mgdl': effective.mgdl,
       'meta_periodo': effective.periodLabel,
       'horario_br': effective.timeLabel,
+      'isf_aplicado': isf,
+      'ic_aplicado': ic,
+      if (isfResolved != null) 'isf_faixa': isfResolved.rangeLabel,
+      if (icResolved != null) 'ic_faixa': icResolved.rangeLabel,
     };
 
     return InsulinRecommendation(

@@ -1,3 +1,5 @@
+import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
+
 class Profile {
   const Profile({
     required this.id,
@@ -16,6 +18,8 @@ class Profile {
     this.healthSyncEnabled = false,
     this.isfMgdlPerU,
     this.icRatio,
+    this.isfSchedule = const [],
+    this.icSchedule = const [],
     this.rapidInsulinName,
     this.doseStep = 1,
     this.insulinDurationHours = 4,
@@ -56,8 +60,12 @@ class Profile {
   final int libreAlertHyperMgdl;
   final int libreAlertStaleMinutes;
   final bool healthSyncEnabled;
+  /// Midnight mirror of [isfSchedule] (start_minute == 0).
   final double? isfMgdlPerU;
+  /// Midnight mirror of [icSchedule] (start_minute == 0).
   final double? icRatio;
+  final List<RatioSegment> isfSchedule;
+  final List<RatioSegment> icSchedule;
   final String? rapidInsulinName;
   final double doseStep;
   final double insulinDurationHours;
@@ -83,11 +91,29 @@ class Profile {
       supporterStatus == 'grace' ||
       supporterStatus == 'canceled';
 
+  static final _ratioResolver = const RatioScheduleResolver();
+
+  bool get _hasUsableIsf {
+    final schedule = _ratioResolver.normalize(
+      isfSchedule,
+      fallbackValue: isfMgdlPerU,
+    );
+    return schedule.isNotEmpty || (isfMgdlPerU != null && isfMgdlPerU! > 0);
+  }
+
+  bool get _hasUsableIc {
+    final schedule = _ratioResolver.normalize(
+      icSchedule,
+      fallbackValue: icRatio,
+    );
+    return schedule.isNotEmpty || (icRatio != null && icRatio! > 0);
+  }
+
   bool get isComplete =>
       targetGlucoseMgdl != null &&
       targetNightMgdl != null &&
-      isfMgdlPerU != null &&
-      icRatio != null &&
+      _hasUsableIsf &&
+      _hasUsableIc &&
       rapidInsulinName != null &&
       rapidInsulinName!.trim().isNotEmpty;
 
@@ -107,6 +133,11 @@ class Profile {
   }
 
   factory Profile.fromJson(Map<String, dynamic> json) {
+    final isfScalar = (json['isf_mgdl_per_u'] as num?)?.toDouble();
+    final icScalar = (json['ic_ratio'] as num?)?.toDouble();
+    final isfSchedule = RatioScheduleResolver.parseList(json['isf_schedule']);
+    final icSchedule = RatioScheduleResolver.parseList(json['ic_schedule']);
+    const resolver = RatioScheduleResolver();
     return Profile(
       id: json['id'] as String,
       fullName: json['full_name'] as String?,
@@ -127,8 +158,10 @@ class Profile {
       libreAlertStaleMinutes:
           (json['libre_alert_stale_minutes'] as num?)?.toInt() ?? 20,
       healthSyncEnabled: json['health_sync_enabled'] == true,
-      isfMgdlPerU: (json['isf_mgdl_per_u'] as num?)?.toDouble(),
-      icRatio: (json['ic_ratio'] as num?)?.toDouble(),
+      isfMgdlPerU: isfScalar,
+      icRatio: icScalar,
+      isfSchedule: resolver.normalize(isfSchedule, fallbackValue: isfScalar),
+      icSchedule: resolver.normalize(icSchedule, fallbackValue: icScalar),
       rapidInsulinName: json['rapid_insulin_name'] as String?,
       doseStep: (json['dose_step'] as num?)?.toDouble() ?? 1,
       insulinDurationHours:
@@ -178,6 +211,8 @@ class Profile {
       'health_sync_enabled': healthSyncEnabled,
       'isf_mgdl_per_u': isfMgdlPerU,
       'ic_ratio': icRatio,
+      'isf_schedule': isfSchedule.map((s) => s.toJson()).toList(),
+      'ic_schedule': icSchedule.map((s) => s.toJson()).toList(),
       'rapid_insulin_name': rapidInsulinName,
       'dose_step': doseStep,
       'insulin_duration_hours': insulinDurationHours,
@@ -212,6 +247,8 @@ class Profile {
     bool? healthSyncEnabled,
     double? isfMgdlPerU,
     double? icRatio,
+    List<RatioSegment>? isfSchedule,
+    List<RatioSegment>? icSchedule,
     String? rapidInsulinName,
     double? doseStep,
     double? insulinDurationHours,
@@ -248,6 +285,8 @@ class Profile {
       healthSyncEnabled: healthSyncEnabled ?? this.healthSyncEnabled,
       isfMgdlPerU: isfMgdlPerU ?? this.isfMgdlPerU,
       icRatio: icRatio ?? this.icRatio,
+      isfSchedule: isfSchedule ?? this.isfSchedule,
+      icSchedule: icSchedule ?? this.icSchedule,
       rapidInsulinName: rapidInsulinName ?? this.rapidInsulinName,
       doseStep: doseStep ?? this.doseStep,
       insulinDurationHours:

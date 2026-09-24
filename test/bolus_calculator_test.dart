@@ -1,6 +1,7 @@
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/bolus_calculator.dart';
+import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 import 'package:diabetes_app/services/target_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -99,6 +100,42 @@ void main() {
     expect(r.correcaoU, 1);
     expect(r.bolusComidaU, 2);
     expect(r.insulinaRecomendadaU, 3);
+  });
+
+  test('uses time-of-day FSI and I:C schedules', () {
+    final p = profile.copyWith(
+      isfMgdlPerU: 50,
+      icRatio: 10,
+      isfSchedule: const [
+        RatioSegment(startMinute: 0, value: 50),
+        RatioSegment(startMinute: 360, value: 25),
+      ],
+      icSchedule: const [
+        RatioSegment(startMinute: 0, value: 10),
+        RatioSegment(startMinute: 360, value: 20),
+      ],
+    );
+    final morning = calc.calculate(
+      glucoseMgdl: 210,
+      carboidratosG: 40,
+      profile: p,
+      now: at(8, 0),
+    );
+    // FSI 25: (210-110)/25 = 4; I:C 20: 40/20 = 2
+    expect(morning.correcaoU, 4);
+    expect(morning.bolusComidaU, 2);
+    expect(morning.raw?['isf_aplicado'], 25);
+    expect(morning.raw?['ic_aplicado'], 20);
+
+    final night = calc.calculate(
+      glucoseMgdl: 210,
+      carboidratosG: 40,
+      profile: p,
+      now: at(2, 0),
+    );
+    // night target 120, FSI 50: (210-120)/50 = 1.8 -> 2; I:C 10: 40/10 = 4
+    expect(night.correcaoU, 2);
+    expect(night.bolusComidaU, 4);
   });
 
   test('same UTC instant can flip day/night when timezone changes', () {

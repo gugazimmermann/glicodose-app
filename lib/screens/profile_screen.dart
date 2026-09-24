@@ -7,11 +7,13 @@ import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/app_time.dart';
+import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 import 'package:diabetes_app/services/theme_preference_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
+import 'package:diabetes_app/widgets/ratio_schedule_editor.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -37,12 +39,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
   final _targetController = TextEditingController();
   final _targetNightController = TextEditingController();
-  final _isfController = TextEditingController();
-  final _icInsulinController = TextEditingController(text: '1');
-  final _icCarbsController = TextEditingController();
   final _insulinController = TextEditingController();
   final _basalInsulinController = TextEditingController();
   final _basalDoseController = TextEditingController();
+  final _isfEditorKey = GlobalKey<RatioScheduleEditorState>();
+  final _icEditorKey = GlobalKey<RatioScheduleEditorState>();
+  final _ratioResolver = const RatioScheduleResolver();
   int _nightStartMinute = 1200;
   int _nightEndMinute = 359;
   String _timezone = AppTime.defaultLocationName;
@@ -58,6 +60,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   double _insulinDurationHours = 4;
   List<int> _basalTimesMinutes = [];
   bool _basalReminderEnabled = false;
+  List<RatioSegment> _isfSchedule = const [];
+  List<RatioSegment> _icSchedule = const [];
 
   @override
   void initState() {
@@ -72,9 +76,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController.dispose();
     _targetController.dispose();
     _targetNightController.dispose();
-    _isfController.dispose();
-    _icInsulinController.dispose();
-    _icCarbsController.dispose();
     _insulinController.dispose();
     _basalInsulinController.dispose();
     _basalDoseController.dispose();
@@ -164,13 +165,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _targetController.text = profile.targetGlucoseMgdl?.toString() ?? '';
         _targetNightController.text =
             profile.targetNightMgdl?.toString() ?? '';
-        _isfController.text = profile.isfMgdlPerU == null
-            ? ''
-            : formatWhole(profile.isfMgdlPerU);
-        _icInsulinController.text = '1';
-        _icCarbsController.text = profile.icRatio == null
-            ? ''
-            : formatWhole(profile.icRatio);
+        _isfSchedule = _ratioResolver.normalize(
+          profile.isfSchedule,
+          fallbackValue: profile.isfMgdlPerU,
+        );
+        _icSchedule = _ratioResolver.normalize(
+          profile.icSchedule,
+          fallbackValue: profile.icRatio,
+        );
         _insulinController.text = profile.rapidInsulinName ?? '';
         _nightStartMinute = profile.nightStartMinute;
         _nightEndMinute = profile.nightEndMinute;
@@ -219,6 +221,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    final isfErr = _isfEditorKey.currentState?.validateAndEmit();
+    final icErr = _icEditorKey.currentState?.validateAndEmit();
+    if (isfErr != null || icErr != null) {
+      setState(() => _error = isfErr ?? icErr);
+      return;
+    }
+
+    final isfSchedule = _ratioResolver.normalize(_isfSchedule);
+    final icSchedule = _ratioResolver.normalize(_icSchedule);
+    final isfValid = _ratioResolver.validate(isfSchedule, label: 'FSI');
+    final icValid = _ratioResolver.validate(icSchedule, label: 'I:C');
+    if (isfValid != null || icValid != null) {
+      setState(() => _error = isfValid ?? icValid);
+      return;
+    }
+
     setState(() {
       _saving = true;
       _error = null;
@@ -243,9 +261,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         nightEndMinute: _nightEndMinute,
         timezone: _timezone,
         theme: _theme,
-        isfMgdlPerU:
-            double.parse(_isfController.text.trim().replaceAll(',', '.')),
-        icRatio: _parseIcRatio(),
+        isfSchedule: isfSchedule,
+        icSchedule: icSchedule,
+        isfMgdlPerU: _ratioResolver.mirrorMidnightValue(isfSchedule),
+        icRatio: _ratioResolver.mirrorMidnightValue(icSchedule),
         rapidInsulinName: _insulinController.text.trim(),
         doseStep: _doseStep,
         insulinDurationHours: _insulinDurationHours,
@@ -566,74 +585,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ],
                       ),
                       SizedBox(height: 14),
-                      TextFormField(
-                        controller: _isfController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(
-                          labelText: 'Fator de sensibilidade à insulina',
-                          hintText: 'Ex: 150',
-                          helperText: 'mg/dL que 1U de insulina reduz',
-                          prefixIcon: Icon(Icons.science_outlined),
-                        ),
-                        validator: _requiredPositiveDouble,
+                      RatioScheduleEditor(
+                        key: _isfEditorKey,
+                        label: 'Fator de sensibilidade à insulina (FSI)',
+                        helperText:
+                            'mg/dL que 1 U reduz. Faixas por horário (estilo bomba). '
+                            'A faixa 00:00 é obrigatória.',
+                        valueHint: 'FSI',
+                        initial: _isfSchedule,
+                        onChanged: (s) => _isfSchedule = s,
                       ),
                       SizedBox(height: 14),
-                      Text(
-                        'Unidade de insulina / gramas de carboidratos',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: colors.ink,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _icInsulinController,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: 'Unidade de insulina',
-                                hintText: 'Ex: 1',
-                                prefixIcon: Icon(Icons.medication_outlined),
-                              ),
-                              validator: _requiredPositiveDouble,
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.only(top: 16, left: 8, right: 8),
-                            child: Text(
-                              '/',
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w600,
-                                color: colors.ink,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: TextFormField(
-                              controller: _icCarbsController,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: 'Gramas de carboidratos',
-                                hintText: 'Ex: 25',
-                                prefixIcon: Icon(Icons.restaurant_outlined),
-                              ),
-                              validator: _requiredPositiveDouble,
-                            ),
-                          ),
-                        ],
+                      RatioScheduleEditor(
+                        key: _icEditorKey,
+                        label: 'Razão I:C',
+                        helperText:
+                            'Gramas de carboidrato por 1 U. Faixas por horário. '
+                            'A faixa 00:00 é obrigatória.',
+                        valueHint: 'g / 1 U',
+                        initial: _icSchedule,
+                        onChanged: (s) => _icSchedule = s,
                       ),
                       SizedBox(height: 14),
                       TextFormField(
@@ -956,26 +927,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  double _parseIcRatio() {
-    final units = double.parse(
-      _icInsulinController.text.trim().replaceAll(',', '.'),
-    );
-    final carbs = double.parse(
-      _icCarbsController.text.trim().replaceAll(',', '.'),
-    );
-    return carbs / units;
-  }
-
   String? _requiredInt(String? value) {
     if (value == null || value.trim().isEmpty) return 'Obrigatório';
     final n = int.tryParse(value.trim());
-    if (n == null || n <= 0) return 'Número inválido';
-    return null;
-  }
-
-  String? _requiredPositiveDouble(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Obrigatório';
-    final n = double.tryParse(value.trim().replaceAll(',', '.'));
     if (n == null || n <= 0) return 'Número inválido';
     return null;
   }

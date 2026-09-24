@@ -10,6 +10,8 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type',
 }
 
+type RatioSegment = { start_minute: number; value: number }
+
 type Profile = {
   diabetes_type: string | null
   target_glucose_mgdl: number | null
@@ -19,8 +21,106 @@ type Profile = {
   timezone: string | null
   isf_mgdl_per_u: number | null
   ic_ratio: number | null
+  isf_schedule: RatioSegment[] | null
+  ic_schedule: RatioSegment[] | null
   rapid_insulin_name: string | null
   dose_step: number | null
+}
+
+const MAX_RATIO_SEGMENTS = 12
+
+function parseRatioSchedule(raw: unknown): RatioSegment[] {
+  if (!Array.isArray(raw)) return []
+  const out: RatioSegment[] = []
+  for (const e of raw) {
+    if (e == null || typeof e !== 'object') continue
+    const row = e as Record<string, unknown>
+    const start = Number(row.start_minute)
+    const value = Number(row.value)
+    if (!Number.isFinite(start) || !Number.isFinite(value) || value <= 0) {
+      continue
+    }
+    out.push({
+      start_minute: Math.max(0, Math.min(1439, Math.round(start))),
+      value,
+    })
+    if (out.length >= MAX_RATIO_SEGMENTS) break
+  }
+  return out.sort((a, b) => a.start_minute - b.start_minute)
+}
+
+function normalizeRatioSchedule(
+  raw: RatioSegment[],
+  fallback?: number | null,
+): RatioSegment[] {
+  const byStart = new Map<number, RatioSegment>()
+  for (const s of raw) {
+    if (!byStart.has(s.start_minute)) byStart.set(s.start_minute, s)
+  }
+  let list = [...byStart.values()].sort(
+    (a, b) => a.start_minute - b.start_minute,
+  )
+  if (
+    list.length === 0 &&
+    fallback != null &&
+    Number.isFinite(fallback) &&
+    fallback > 0
+  ) {
+    list = [{ start_minute: 0, value: fallback }]
+  }
+  if (list.length > 0 && list[0].start_minute !== 0) {
+    const midnight =
+      fallback != null && Number.isFinite(fallback) && fallback > 0
+        ? fallback
+        : list[0].value
+    list = [{ start_minute: 0, value: midnight }, ...list]
+  }
+  return list
+}
+
+function formatMinuteHm(minute: number): string {
+  const m = ((minute % 1440) + 1440) % 1440
+  const h = Math.floor(m / 60)
+  const min = m % 60
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+}
+
+function resolveRatio(
+  schedule: RatioSegment[],
+  minuteOfDay: number,
+  fallback?: number | null,
+): { value: number; range_label: string } | null {
+  const minute = ((Math.round(minuteOfDay) % 1440) + 1440) % 1440
+  const normalized = normalizeRatioSchedule(schedule, fallback)
+  if (normalized.length === 0) {
+    if (fallback != null && Number.isFinite(fallback) && fallback > 0) {
+      return { value: fallback, range_label: '00:00–24:00' }
+    }
+    return null
+  }
+  let active = normalized[0]
+  for (const s of normalized) {
+    if (s.start_minute <= minute) active = s
+    else break
+  }
+  const idx = normalized.indexOf(active)
+  const end =
+    idx + 1 < normalized.length ? normalized[idx + 1].start_minute : 1440
+  const endLabel = end >= 1440 ? '24:00' : formatMinuteHm(end)
+  return {
+    value: active.value,
+    range_label: `${formatMinuteHm(active.start_minute)}–${endLabel}`,
+  }
+}
+
+function hasUsableRatio(
+  schedule: RatioSegment[],
+  scalar: number | null,
+): boolean {
+  return (
+    normalizeRatioSchedule(schedule, scalar).length > 0 ||
+    (scalar != null && Number.isFinite(scalar) && scalar > 0)
+  )
 }
 
 /** GPT-4o approx USD per 1M tokens (input / output) — observability only */
@@ -209,7 +309,7 @@ Deno.serve(async (req) => {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select(
-        'diabetes_type, target_glucose_mgdl, target_night_mgdl, night_start_minute, night_end_minute, timezone, isf_mgdl_per_u, ic_ratio, rapid_insulin_name, dose_step',
+        'diabetes_type, target_glucose_mgdl, target_night_mgdl, night_start_minute, night_end_minute, timezone, isf_mgdl_per_u, ic_ratio, isf_schedule, ic_schedule, rapid_insulin_name, dose_step',
       )
       .eq('id', user.id)
       .maybeSingle()
@@ -219,12 +319,14 @@ Deno.serve(async (req) => {
     }
 
     const p = profile as Profile | null
+    const isfSchedule = parseRatioSchedule(p?.isf_schedule)
+    const icSchedule = parseRatioSchedule(p?.ic_schedule)
     if (
       !p ||
       p.target_glucose_mgdl == null ||
       p.target_night_mgdl == null ||
-      p.isf_mgdl_per_u == null ||
-      p.ic_ratio == null ||
+      !hasUsableRatio(isfSchedule, p.isf_mgdl_per_u) ||
+      !hasUsableRatio(icSchedule, p.ic_ratio) ||
       !p.rapid_insulin_name
     ) {
       return json({
@@ -235,8 +337,6 @@ Deno.serve(async (req) => {
 
     const rawStep = Number(p.dose_step)
     const doseStep = Number.isFinite(rawStep) && rawStep > 0 ? rawStep : 1
-    const isf = Number(p.isf_mgdl_per_u)
-    const ic = Number(p.ic_ratio)
     const nightStart = Number(p.night_start_minute ?? 1200)
     const nightEnd = Number(p.night_end_minute ?? 359)
 
@@ -252,6 +352,19 @@ Deno.serve(async (req) => {
       : Number(p.target_glucose_mgdl)
     const periodo = night ? 'noite' : 'dia'
     const tipo = diabetesLabel(p.diabetes_type ?? 'type_1')
+
+    const isfResolved = resolveRatio(
+      isfSchedule,
+      zoned.minuteOfDay,
+      p.isf_mgdl_per_u,
+    )!
+    const icResolved = resolveRatio(
+      icSchedule,
+      zoned.minuteOfDay,
+      p.ic_ratio,
+    )!
+    const isf = isfResolved.value
+    const ic = icResolved.value
 
     const prompt = `Paciente com diabetes ${tipo}. Sempre faça contagem de carboidratos da refeição, conforme composição alimentar.
 
@@ -418,6 +531,10 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
       meta_mgdl: target,
       meta_periodo: periodo,
       horario_br: zoned.hm,
+      isf_aplicado: isf,
+      ic_aplicado: ic,
+      isf_faixa: isfResolved.range_label,
+      ic_faixa: icResolved.range_label,
       observacao,
       source: 'ai',
     })

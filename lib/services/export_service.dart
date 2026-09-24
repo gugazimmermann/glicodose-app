@@ -12,11 +12,36 @@ import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/history_stats.dart';
+import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
 /// CSV / text / PDF export for clinic visits.
 class ExportService {
   const ExportService();
+
+  static String _formatSchedule(
+    List<RatioSegment> schedule,
+    double? scalarFallback,
+    String unit,
+  ) {
+    const resolver = RatioScheduleResolver();
+    final bands = resolver.normalize(schedule, fallbackValue: scalarFallback);
+    if (bands.isEmpty) {
+      return scalarFallback != null ? '00:00–24:00: $scalarFallback $unit' : '—';
+    }
+    final parts = <String>[];
+    for (var i = 0; i < bands.length; i++) {
+      final s = bands[i];
+      final end = i + 1 < bands.length ? bands[i + 1].startMinute : 1440;
+      final endLabel =
+          end >= 1440 ? '24:00' : RatioScheduleResolver.formatMinute(end);
+      parts.add(
+        '${RatioScheduleResolver.formatMinute(s.startMinute)}–$endLabel: '
+        '${formatWhole(s.value)} $unit',
+      );
+    }
+    return parts.join('; ');
+  }
 
   static pw.ThemeData? _pdfThemeCache;
 
@@ -106,7 +131,12 @@ class ExportService {
         'Meta noite: ${profile.targetNightMgdl ?? '—'} mg/dL',
       );
       buf.writeln(
-        'FSI: ${profile.isfMgdlPerU ?? '—'} · I:C: ${profile.icRatio ?? '—'} · '
+        'FSI: ${_formatSchedule(profile.isfSchedule, profile.isfMgdlPerU, 'mg/dL/U')}',
+      );
+      buf.writeln(
+        'I:C: ${_formatSchedule(profile.icSchedule, profile.icRatio, 'g/U')}',
+      );
+      buf.writeln(
         'Insulina rápida: ${profile.rapidInsulinName ?? '—'} · '
         'Duração IOB: ${profile.insulinDurationHours} h · '
         'Passo: ${profile.doseStep} U',
@@ -284,7 +314,12 @@ class ExportService {
               '${profile.targetNightMgdl ?? '—'} mg/dL',
             ),
             pw.Text(
-              'FSI ${profile.isfMgdlPerU ?? '—'} · I:C ${profile.icRatio ?? '—'} · '
+              'FSI: ${_formatSchedule(profile.isfSchedule, profile.isfMgdlPerU, 'mg/dL/U')}',
+            ),
+            pw.Text(
+              'I:C: ${_formatSchedule(profile.icSchedule, profile.icRatio, 'g/U')}',
+            ),
+            pw.Text(
               'Rápida ${profile.rapidInsulinName ?? '—'} · '
               'IOB ${profile.insulinDurationHours} h · passo ${profile.doseStep} U',
             ),
