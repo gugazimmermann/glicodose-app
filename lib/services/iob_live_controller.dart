@@ -11,6 +11,7 @@ import 'package:diabetes_app/services/iob_foreground_task.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
+import 'package:diabetes_app/services/widget_health_sync.dart';
 import 'package:diabetes_app/services/widget_libre_sync.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
@@ -21,17 +22,18 @@ class IobLiveController {
     required EntryService entries,
     required ProfileService profile,
     required IobBadgeService badge,
-  })  : _entries = entries,
-        _profile = profile,
-        _badge = badge;
+  }) : _entries = entries,
+       _profile = profile,
+       _badge = badge;
 
   final EntryService _entries;
   final ProfileService _profile;
   final IobBadgeService _badge;
   final IobService _iob = const IobService();
 
-  final ValueNotifier<IobSnapshot> snapshot =
-      ValueNotifier<IobSnapshot>(IobSnapshot.empty);
+  final ValueNotifier<IobSnapshot> snapshot = ValueNotifier<IobSnapshot>(
+    IobSnapshot.empty,
+  );
 
   /// True while the first / active network refresh is in flight.
   final ValueNotifier<bool> loading = ValueNotifier<bool>(false);
@@ -41,6 +43,7 @@ class IobLiveController {
 
   Timer? _timer;
   bool _listeningTaskData = false;
+  bool _widgetUnlocked = false;
   List<IobCachedDose> _doses = const [];
   double _durationHours = 4.0;
 
@@ -99,7 +102,9 @@ class IobLiveController {
     await IobBackground.cancel();
     await IobForegroundTask.stop();
     await _badge.clear();
-    await StatusHomeWidgetService.clear();
+    _widgetUnlocked = false;
+    await StatusHomeWidgetService.setUnlocked(false);
+    await WidgetHealthSync.setEnabled(false);
   }
 
   /// Fetch profile + recent entries, persist cache, update UI + badge + FGS.
@@ -109,6 +114,10 @@ class IobLiveController {
     try {
       await _badge.ensureReady();
       final profile = await _profile.fetchCurrent();
+      await _syncWidgetAccess(
+        profile?.isSupporter ?? false,
+        healthSync: profile?.healthSyncEnabled ?? false,
+      );
       final duration = profile?.insulinDurationHours ?? 4.0;
       _durationHours = duration;
 
@@ -120,8 +129,9 @@ class IobLiveController {
         return;
       }
 
-      final since =
-          DateTime.now().subtract(Duration(hours: duration.ceil() + 1));
+      final since = DateTime.now().subtract(
+        Duration(hours: duration.ceil() + 1),
+      );
       final entries = await _entries.listEntriesSince(since);
       _doses = IobCache.fromEntries(entries);
       final snap = _iob.computeIob(
@@ -170,7 +180,9 @@ class IobLiveController {
     );
     await _publish(snap);
     // iOS has no FGS: refresh Libre on the same 1-min timer while the app is alive.
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.iOS &&
+        _widgetUnlocked) {
       final libreOn = await StatusHomeWidgetService.isLibreConnected();
       if (libreOn) {
         unawaited(WidgetLibreSync.refresh(showSyncing: false));
@@ -178,10 +190,21 @@ class IobLiveController {
     }
   }
 
+  Future<void> _syncWidgetAccess(
+    bool unlocked, {
+    required bool healthSync,
+  }) async {
+    _widgetUnlocked = unlocked;
+    await StatusHomeWidgetService.setUnlocked(unlocked);
+    await WidgetHealthSync.setEnabled(unlocked && healthSync);
+  }
+
   Future<void> _publish(IobSnapshot snap) async {
     snapshot.value = snap;
     final n = asWholeDose(snap.iobU);
-    unawaited(StatusHomeWidgetService.publishIobTick(n));
+    if (_widgetUnlocked) {
+      unawaited(StatusHomeWidgetService.publishIobTick(n));
+    }
     final libreOn = await StatusHomeWidgetService.isLibreConnected();
     if (n > 0 || libreOn) {
       final fgsOk = await IobForegroundTask.ensureRunningForWidget(iobU: n);

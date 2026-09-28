@@ -87,7 +87,64 @@ flutter pub get
 flutter run --dart-define-from-file=.env
 ```
 
+O `flutter run` acima escolhe um dispositivo sozinho. Para o emulador ou o celular, use as seções abaixo. Os `--dart-define-from-file=.env` são obrigatórios em todos os casos.
+
 **Não** coloque `OPENAI_API_KEY` nem a service account do Firebase no `.env` do app — só nos secrets do Supabase.
+
+## Emulador Android
+
+AVD já criado nesta máquina: **Pixel_10** (Android com Play Store). Confira os disponíveis:
+
+```bash
+flutter emulators
+```
+
+Suba o emulador e espere a home do Android abrir:
+
+```bash
+flutter emulators --launch Pixel_10
+```
+
+Quando ele aparecer em `flutter devices` (normalmente como `emulator-5554`), rode o app:
+
+```bash
+flutter devices
+flutter run --dart-define-from-file=.env -d emulator-5554
+```
+
+Se o `Pixel_10` já estiver aberto, não lance de novo — o segundo processo falha. Encerre o que está no ar e abra outra vez:
+
+```bash
+adb -s emulator-5554 emu kill
+flutter emulators --launch Pixel_10
+```
+
+## Celular físico
+
+Celular usado neste projeto: **Samsung SM-G990E** (`RXCW20156GV`, Android 16). O app exige Android 8+ (`minSdk` 26).
+
+No telefone, uma vez:
+
+1. **Configurações → Sobre o telefone** → toque 7 vezes em **Número da versão** para ativar as Opções do desenvolvedor.
+2. **Opções do desenvolvedor → Depuração USB** ligada.
+3. Conecte o cabo USB. Na notificação de USB, escolha **Transferência de arquivos** (não “Só carregar”).
+4. Aceite o diálogo **Permitir depuração USB?** (marque “sempre permitir neste computador”).
+
+Confira se o aparelho entrou e rode:
+
+```bash
+adb devices -l
+flutter devices
+flutter run -d RXCW20156GV --dart-define-from-file=.env
+```
+
+O status em `adb devices` precisa ser `device`. `unauthorized` significa que o diálogo de depuração ainda não foi aceito; se o celular não aparecer, reconecte o cabo, troque a porta USB e rode `adb kill-server && adb start-server`. Com o telefone visível, o id também funciona assim:
+
+```bash
+flutter run -d android --dart-define-from-file=.env
+```
+
+Use `-d android` só quando houver um único aparelho Android conectado (emulador ou celular). Com os dois ligados, informe o id (`emulator-5554` ou `RXCW20156GV`).
 
 ### Firebase / FCM
 

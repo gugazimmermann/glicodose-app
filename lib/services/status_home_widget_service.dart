@@ -10,10 +10,10 @@ import 'package:diabetes_app/utils/dose_format.dart';
 class StatusHomeWidgetService {
   StatusHomeWidgetService._();
 
-  static const androidQualifiedName =
-      'app.glicodose.GlicoDoseWidgetProvider';
+  static const androidQualifiedName = 'app.glicodose.GlicoDoseWidgetProvider';
   static const iosWidgetName = 'GlicoDoseWidget';
 
+  static const keyWidgetUnlocked = 'widget_unlocked';
   static const keyLibreConnected = 'libre_connected';
   static const keyHasGlucose = 'has_glucose';
   static const keyGlucoseMgdl = 'glucose_mgdl';
@@ -31,6 +31,31 @@ class StatusHomeWidgetService {
 
   static bool get _supported =>
       supportedOverride ?? (!kIsWeb && (Platform.isAndroid || Platform.isIOS));
+
+  /// Home-widget glucose and IOB are published only while this is true.
+  static Future<bool> isUnlocked() async {
+    if (!_supported) return false;
+    try {
+      return await HomeWidget.getWidgetData<bool>(keyWidgetUnlocked) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Supporters get live widget data. Others see the support warning.
+  static Future<void> setUnlocked(bool unlocked) async {
+    if (!_supported) return;
+    try {
+      await HomeWidget.saveWidgetData<bool>(keyWidgetUnlocked, unlocked);
+      if (!unlocked) {
+        await clear();
+        return;
+      }
+      await _updateWidget();
+    } catch (e, st) {
+      debugPrint('StatusHomeWidgetService.setUnlocked failed: $e\n$st');
+    }
+  }
 
   /// Whether Libre was last published as connected (for FGS keep-alive).
   static Future<bool> isLibreConnected() async {
@@ -51,7 +76,7 @@ class StatusHomeWidgetService {
     String? lastError,
     bool clearError = false,
   }) async {
-    if (!_supported) return;
+    if (!_supported || !await isUnlocked()) return;
     try {
       if (libreConnected != null) {
         await HomeWidget.saveWidgetData<bool>(
@@ -117,7 +142,7 @@ class StatusHomeWidgetService {
 
   /// Recompute age label + IOB for periodic ticks (FGS / Workmanager).
   static Future<void> publishIobTick(int iobU) async {
-    if (!_supported) return;
+    if (!_supported || !await isUnlocked()) return;
     try {
       await _refreshGlucoseAgeLabel();
       await HomeWidget.saveWidgetData<int>(keyIobU, asWholeDose(iobU));
@@ -159,8 +184,7 @@ class StatusHomeWidgetService {
     final at = DateTime.tryParse(iso)?.toLocal();
     if (at == null) return;
     final reading = LibreGlucoseReading(
-      glucoseMgdl:
-          await HomeWidget.getWidgetData<int>(keyGlucoseMgdl) ?? 0,
+      glucoseMgdl: await HomeWidget.getWidgetData<int>(keyGlucoseMgdl) ?? 0,
       recordedAt: at,
     );
     await HomeWidget.saveWidgetData<String>(keyGlucoseAge, reading.ageLabel);

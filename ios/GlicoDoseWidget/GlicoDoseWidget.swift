@@ -30,6 +30,7 @@ struct GlicoDoseEntry: TimelineEntry {
   let syncing: Bool
   let lastError: String
   let transparentBackground: Bool
+  let widgetUnlocked: Bool
 }
 
 struct Provider: AppIntentTimelineProvider {
@@ -44,7 +45,8 @@ struct Provider: AppIntentTimelineProvider {
       iobU: 2,
       syncing: false,
       lastError: "",
-      transparentBackground: false
+      transparentBackground: false,
+      widgetUnlocked: true
     )
   }
 
@@ -81,7 +83,8 @@ struct Provider: AppIntentTimelineProvider {
       iobU: prefs?.integer(forKey: "iob_u") ?? 0,
       syncing: prefs?.bool(forKey: "syncing") ?? false,
       lastError: prefs?.string(forKey: "last_error") ?? "",
-      transparentBackground: transparentBackground
+      transparentBackground: transparentBackground,
+      widgetUnlocked: prefs?.bool(forKey: "widget_unlocked") ?? false
     )
   }
 
@@ -127,7 +130,28 @@ struct GlicoDoseWidgetEntryView: View {
     return "Libre off"
   }
 
+  private var supportWarning: String {
+    "Ao apoiar o GlicoDose, você pode usar o widget da tela inicial, o Health Connect ou o Apple Health e o monitoramento em tempo real com o LibreLinkUp."
+  }
+
   var body: some View {
+    if !entry.widgetUnlocked {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("GlicoDose")
+          .font(.caption.weight(.bold))
+          .foregroundColor(chromeColor)
+        Text(supportWarning)
+          .font(.caption2)
+          .foregroundColor(.primary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .padding(4)
+    } else {
+      unlockedBody
+    }
+  }
+
+  private var unlockedBody: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack {
         Text("GlicoDose")
@@ -240,7 +264,8 @@ struct GlicoDoseWidget_Previews: PreviewProvider {
         iobU: 3,
         syncing: false,
         lastError: "",
-        transparentBackground: false
+        transparentBackground: false,
+        widgetUnlocked: true
       )
     )
     .previewContext(WidgetPreviewContext(family: .systemSmall))

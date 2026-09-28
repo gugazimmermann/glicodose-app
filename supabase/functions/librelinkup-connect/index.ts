@@ -9,6 +9,10 @@ import {
   libreLogin,
   normalizeRegion,
 } from '../_shared/libre.ts'
+import {
+  supporterRequiredMessage,
+  userIsSupporter,
+} from '../_shared/supporter.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,6 +49,13 @@ Deno.serve(async (req) => {
       error: userError,
     } = await supabase.auth.getUser()
     if (userError || !user) return json({ error: 'Sessão inválida' }, 401)
+
+    const supportReader = serviceKey
+      ? createClient(supabaseUrl, serviceKey)
+      : supabase
+    if (!(await userIsSupporter(supportReader, user.id))) {
+      return json({ error: supporterRequiredMessage }, 403)
+    }
 
     const body = await req.json()
     const email = String(body.email ?? '').trim()

@@ -39,6 +39,7 @@ class FakeAppServices {
   static Profile completeProfile({
     String id = userId,
     String? fullName = 'Tester',
+    String supporterStatus = 'none',
   }) {
     return Profile(
       id: id,
@@ -53,6 +54,7 @@ class FakeAppServices {
       insulinDurationHours: 4,
       disclaimerAcceptedAt: DateTime.utc(2026, 1, 1),
       shareCode: 'ABC123',
+      supporterStatus: supporterStatus,
       basalInsulinName: 'Tresiba',
       basalDoseU: 18,
       basalTimesMinutes: const [480],
@@ -62,6 +64,7 @@ class FakeAppServices {
 
   static FakeAppServices create({
     Profile? profile,
+    String supporterStatus = 'none',
     List<Entry>? entries,
     List<BasalDose>? basalDoses,
     List<GlucoseSample>? glucoseSamples,
@@ -69,7 +72,10 @@ class FakeAppServices {
     FakeHealthPlatformService? health,
   }) {
     final client = Supabase.instance.client;
-    final p = FakeProfileService(client, profile: profile ?? completeProfile());
+    final p = FakeProfileService(
+      client,
+      profile: profile ?? completeProfile(supporterStatus: supporterStatus),
+    );
     final e = FakeEntryService(client, seed: entries ?? const []);
     final b = FakeBasalService(client, seed: basalDoses ?? const []);
     final g = FakeGlicemiaService(client, seed: glucoseSamples ?? const []);
@@ -86,11 +92,7 @@ class FakeAppServices {
     final healthSvc = health ?? FakeHealthPlatformService();
     final push = FakePushTokenService(client);
     final badge = FakeIobBadgeService(entries: e, profile: p);
-    final iobLive = FakeIobLiveController(
-      entries: e,
-      profile: p,
-      badge: badge,
-    );
+    final iobLive = FakeIobLiveController(entries: e, profile: p, badge: badge);
 
     final services = AppServices.compose(
       auth: auth,
@@ -121,12 +123,12 @@ class FakeAuthService extends AuthService {
 
   @override
   User? get currentUser => User(
-        id: userId,
-        appMetadata: const {},
-        userMetadata: const {},
-        aud: 'authenticated',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      );
+    id: userId,
+    appMetadata: const {},
+    userMetadata: const {},
+    aud: 'authenticated',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  );
 
   @override
   Session? get currentSession => null;
@@ -191,7 +193,7 @@ class FakeProfileService extends ProfileService {
 
 class FakeEntryService extends EntryService {
   FakeEntryService(super.client, {List<Entry> seed = const []})
-      : _entries = List<Entry>.from(seed);
+    : _entries = List<Entry>.from(seed);
 
   final List<Entry> _entries;
 
@@ -242,8 +244,7 @@ class FakeEntryService extends EntryService {
     required String entryId,
     required Uint8List bytes,
     String contentType = 'image/jpeg',
-  }) async =>
-      'fake/$entryId.jpg';
+  }) async => 'fake/$entryId.jpg';
 
   @override
   Future<String?> createSignedUrl(String? path) async =>
@@ -304,20 +305,20 @@ class FakeEntryService extends EntryService {
     Duration within = const Duration(hours: 6),
   }) async {
     final since = DateTime.now().toUtc().subtract(within);
-    final candidates = _entries
-        .where(
-          (e) =>
-              e.appliedInsulin == null && !e.recordedAt.isBefore(since),
-        )
-        .toList()
-      ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+    final candidates =
+        _entries
+            .where(
+              (e) => e.appliedInsulin == null && !e.recordedAt.isBefore(since),
+            )
+            .toList()
+          ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
     return candidates.isEmpty ? null : candidates.first;
   }
 }
 
 class FakeBasalService extends BasalService {
   FakeBasalService(super.client, {List<BasalDose> seed = const []})
-      : _doses = List<BasalDose>.from(seed);
+    : _doses = List<BasalDose>.from(seed);
 
   final List<BasalDose> _doses;
 
@@ -388,7 +389,7 @@ class FakeBasalService extends BasalService {
 
 class FakeGlicemiaService extends GlicemiaService {
   FakeGlicemiaService(super.client, {List<GlucoseSample> seed = const []})
-      : _samples = List<GlucoseSample>.from(seed);
+    : _samples = List<GlucoseSample>.from(seed);
 
   final List<GlucoseSample> _samples;
 
@@ -416,10 +417,7 @@ class FakeGlicemiaService extends GlicemiaService {
   ) async {
     for (final r in readings) {
       _samples.add(
-        GlucoseSample(
-          glucoseMgdl: r.glucoseMgdl,
-          recordedAt: r.recordedAt,
-        ),
+        GlucoseSample(glucoseMgdl: r.glucoseMgdl, recordedAt: r.recordedAt),
       );
     }
     return readings.length;
@@ -581,14 +579,12 @@ class FakeHealthPlatformService extends HealthPlatformService {
   Future<List<PlatformGlucoseReading>> glucoseHistory({
     Duration lookback = const Duration(days: 7),
     DateTime? end,
-  }) async =>
-      history;
+  }) async => history;
 
   @override
   Future<PlatformGlucoseReading?> latestGlucose({
     Duration lookback = const Duration(days: 7),
-  }) async =>
-      latest;
+  }) async => latest;
 
   @override
   Future<void> openInstallPage() async {}
@@ -598,10 +594,7 @@ class FakeHealthPlatformService extends HealthPlatformService {
 }
 
 class FakeIobBadgeService extends IobBadgeService {
-  FakeIobBadgeService({
-    required super.entries,
-    required super.profile,
-  });
+  FakeIobBadgeService({required super.entries, required super.profile});
 
   @override
   Future<void> ensureReady() async {}

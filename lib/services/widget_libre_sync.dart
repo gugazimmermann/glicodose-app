@@ -21,12 +21,10 @@ class WidgetLibreSync {
   /// Does not start the foreground service — callers that need keep-alive
   /// should call [IobForegroundTask.ensureRunningForWidget] afterwards.
   static Future<bool> refresh({bool showSyncing = false}) async {
+    if (!await StatusHomeWidgetService.isUnlocked()) return false;
     try {
       if (showSyncing) {
-        await StatusHomeWidgetService.publish(
-          syncing: true,
-          clearError: true,
-        );
+        await StatusHomeWidgetService.publish(syncing: true, clearError: true);
       }
 
       if (!SupabaseConfig.isConfigured) {

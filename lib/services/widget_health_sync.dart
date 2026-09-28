@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:diabetes_app/config/supabase_config.dart';
 import 'package:diabetes_app/services/glicemia_service.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
+import 'package:diabetes_app/services/status_home_widget_service.dart';
 
 /// Shared Health → glicemias sync for Linkar Sensor and the 1-min FGS tick.
 class WidgetHealthSync {
@@ -12,17 +15,21 @@ class WidgetHealthSync {
 
   static const keyHealthSyncEnabled = 'health_sync_enabled';
 
+  static bool get _supported =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   static Future<bool> isEnabled() async {
-    if (kIsWeb) return false;
+    if (!_supported) return false;
     try {
-      return await HomeWidget.getWidgetData<bool>(keyHealthSyncEnabled) ?? false;
+      return await HomeWidget.getWidgetData<bool>(keyHealthSyncEnabled) ??
+          false;
     } catch (_) {
       return false;
     }
   }
 
   static Future<void> setEnabled(bool enabled) async {
-    if (kIsWeb) return;
+    if (!_supported) return;
     try {
       await HomeWidget.saveWidgetData<bool>(keyHealthSyncEnabled, enabled);
     } catch (e, st) {
@@ -37,6 +44,7 @@ class WidgetHealthSync {
     GlicemiaService? glicemias,
   }) async {
     try {
+      if (!await StatusHomeWidgetService.isUnlocked()) return 0;
       if (!await isEnabled()) return 0;
       if (!SupabaseConfig.isConfigured) return 0;
 

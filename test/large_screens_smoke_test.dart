@@ -27,9 +27,9 @@ void main() {
     AppTime.setLocation(AppTime.defaultLocationName);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('com.llfbandit.record/messages'),
-      (call) async => null,
-    );
+          const MethodChannel('com.llfbandit.record/messages'),
+          (call) async => null,
+        );
     await Supabase.initialize(
       url: 'https://example.supabase.co',
       publishableKey: 'public-anon-key',
@@ -61,7 +61,9 @@ void main() {
     return Entry(
       id: id,
       userId: FakeAppServices.userId,
-      recordedAt: recordedAt ?? DateTime.now().toUtc().subtract(const Duration(hours: 1)),
+      recordedAt:
+          recordedAt ??
+          DateTime.now().toUtc().subtract(const Duration(hours: 1)),
       glucoseMgdl: glucose,
       recommendedInsulin: 5,
       appliedInsulin: applied,
@@ -75,11 +77,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  testWidgets('HomeScreen smoke renders glucose form with fakes', (tester) async {
+  testWidgets('HomeScreen smoke renders glucose form with fakes', (
+    tester,
+  ) async {
     await setLargeSurface(tester);
-    final fake = FakeAppServices.create(
-      entries: [sampleEntry(applied: null)],
-    );
+    final fake = FakeAppServices.create(entries: [sampleEntry(applied: null)]);
 
     await tester.pumpWidget(
       wrap(HomeScreen(services: fake.services, embedded: true)),
@@ -91,8 +93,9 @@ void main() {
     expect(find.textContaining('Dose pendente'), findsOneWidget);
   });
 
-  testWidgets('HistoryScreen smoke shows empty and populated states',
-      (tester) async {
+  testWidgets('HistoryScreen smoke shows empty and populated states', (
+    tester,
+  ) async {
     await setLargeSurface(tester);
     final empty = FakeAppServices.create();
     await tester.pumpWidget(
@@ -109,7 +112,9 @@ void main() {
           id: 'b1',
           userId: FakeAppServices.userId,
           // Must fall inside the bolus page window (not older than oldest entry).
-          recordedAt: DateTime.now().toUtc().subtract(const Duration(minutes: 30)),
+          recordedAt: DateTime.now().toUtc().subtract(
+            const Duration(minutes: 30),
+          ),
           units: 18,
           insulinName: 'Tresiba',
         ),
@@ -132,7 +137,9 @@ void main() {
     expect(find.text('Basal'), findsWidgets);
   });
 
-  testWidgets('HistoryChartsTab smoke renders stats with samples', (tester) async {
+  testWidgets('HistoryChartsTab smoke renders stats with samples', (
+    tester,
+  ) async {
     await setLargeSurface(tester);
     final now = DateTime.utc(2026, 9, 21, 12);
     final fake = FakeAppServices.create(
@@ -150,16 +157,16 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(
-      wrap(HistoryChartsTab(services: fake.services)),
-    );
+    await tester.pumpWidget(wrap(HistoryChartsTab(services: fake.services)));
     await settle(tester);
 
     expect(find.text('7 dias'), findsOneWidget);
     expect(find.textContaining('TIR'), findsWidgets);
   });
 
-  testWidgets('ProfileScreen smoke loads complete profile fields', (tester) async {
+  testWidgets('ProfileScreen smoke loads complete profile fields', (
+    tester,
+  ) async {
     await setLargeSurface(tester);
     final fake = FakeAppServices.create();
     await tester.pumpWidget(
@@ -178,8 +185,9 @@ void main() {
     expect((fake.services.auth as FakeAuthService).signedOut, isTrue);
   });
 
-  testWidgets('HealthImportScreen smoke shows Libre + Health sections',
-      (tester) async {
+  testWidgets('HealthImportScreen smoke shows Libre + Health sections', (
+    tester,
+  ) async {
     await setLargeSurface(tester);
     final fake = FakeAppServices.create();
     await tester.pumpWidget(
@@ -191,15 +199,13 @@ void main() {
     await settle(tester);
 
     expect(find.text('Linkar Sensor'), findsOneWidget);
-    expect(find.text('LibreLinkUp'), findsOneWidget);
-    expect(find.textContaining('seguidor'), findsOneWidget);
+    expect(find.textContaining('monitoramento em tempo real'), findsOneWidget);
+    expect(find.text('LibreLinkUp'), findsNothing);
   });
 
   testWidgets('MainShell smoke switches tabs with fakes', (tester) async {
     await setLargeSurface(tester);
-    final fake = FakeAppServices.create(
-      entries: [sampleEntry(applied: 3)],
-    );
+    final fake = FakeAppServices.create(entries: [sampleEntry(applied: 3)]);
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,

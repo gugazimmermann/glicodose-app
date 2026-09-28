@@ -17,6 +17,7 @@ import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/libre_alert_service.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
+import 'package:diabetes_app/services/widget_health_sync.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -24,13 +25,10 @@ import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/disclaimer_banner.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 import 'package:diabetes_app/widgets/support_cta_banner.dart';
+import 'package:diabetes_app/widgets/supporter_feature_notice.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({
-    super.key,
-    required this.services,
-    this.embedded = false,
-  });
+  const HomeScreen({super.key, required this.services, this.embedded = false});
 
   final AppServices services;
   final bool embedded;
@@ -53,10 +51,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _listening = false;
   bool _transcribing = false;
   bool _isSupporter = false;
+  bool _supporterReady = false;
   String? _error;
   String? _glucoseWarning;
   bool _glucoseManuallyEdited = false;
   String? _autoFilledGlucose;
+
   /// When glucose was filled from Health Connect / Apple Health.
   PlatformGlucoseReading? _healthImport;
   bool _libreConnected = false;
@@ -75,13 +75,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _iobLive.snapshot.addListener(_onIobChanged);
     _iobLive.loading.addListener(_onIobChanged);
     _iobLive.failed.addListener(_onIobChanged);
+    widget.services.selectedTabIndex.addListener(_onTabSelected);
     unawaited(_loadSupporterFlag());
     unawaited(_checkUnconfirmed());
     unawaited(_checkBasalToday());
     if (_iobLive.snapshot.value.iobU == 0 && !_iobLive.loading.value) {
       unawaited(_iobLive.refreshFromNetwork());
     }
-    unawaited(_initLibre());
   }
 
   Future<void> _checkUnconfirmed() async {
@@ -103,6 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _iobLive.snapshot.removeListener(_onIobChanged);
     _iobLive.loading.removeListener(_onIobChanged);
     _iobLive.failed.removeListener(_onIobChanged);
+    widget.services.selectedTabIndex.removeListener(_onTabSelected);
     _libreSub?.cancel();
     if (_listening) {
       widget.services.speech.cancelRecording();
@@ -117,16 +118,52 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() {});
   }
 
+  void _onTabSelected() {
+    if (widget.services.selectedTabIndex.value != 0) return;
+    unawaited(_loadSupporterFlag());
+  }
+
+  void _openSupportTab() {
+    widget.services.selectedTabIndex.value = 2;
+  }
+
   Future<void> _loadSupporterFlag() async {
     try {
       final profile = await widget.services.profile.fetchCurrent();
-      if (mounted) {
-        setState(() => _isSupporter = profile?.isSupporter ?? false);
+      final supporter = profile?.isSupporter ?? false;
+      if (!mounted) return;
+      final becameSupporter = supporter && !_isSupporter;
+      setState(() {
+        _isSupporter = supporter;
+        _supporterReady = true;
+      });
+      await StatusHomeWidgetService.setUnlocked(supporter);
+      await WidgetHealthSync.setEnabled(
+        supporter && (profile?.healthSyncEnabled ?? false),
+      );
+      if (!supporter) {
+        await _libreSub?.cancel();
+        _libreSub = null;
+        if (mounted) {
+          setState(() {
+            _libreConnected = false;
+            _libreReading = null;
+            _libreSyncing = false;
+          });
+        }
+        return;
       }
-    } catch (_) {}
+      if (becameSupporter || !_libreConnected) {
+        await _initLibre();
+      }
+    } catch (_) {
+      if (!mounted || _isSupporter) return;
+      setState(() => _supporterReady = true);
+    }
   }
 
   Future<void> _initLibre() async {
+    if (!_isSupporter) return;
     try {
       final status = await widget.services.libre.status();
       if (!mounted) return;
@@ -165,14 +202,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _applyLibreReading(
-    LibreGlucoseReading reading, {
-    bool force = false,
-  }) {
+  void _applyLibreReading(LibreGlucoseReading reading, {bool force = false}) {
     final text = reading.glucoseMgdl.toString();
     final current = _glucoseController.text.trim();
-    final stillAuto =
-        current.isEmpty || current == (_autoFilledGlucose ?? '');
+    final stillAuto = current.isEmpty || current == (_autoFilledGlucose ?? '');
     final canFill = force || !_glucoseManuallyEdited || stillAuto;
 
     setState(() {
@@ -218,9 +251,9 @@ class _HomeScreenState extends State<HomeScreen> {
       } catch (_) {}
       if (!mounted) return;
       if (!silent) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(userFacingError(e))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
       }
     } finally {
       if (mounted) setState(() => _libreSyncing = false);
@@ -263,6 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _importFromHealth() async {
+    if (!_isSupporter) return;
     final health = widget.services.healthPlatform;
     if (!health.isSupportedPlatform) {
       setState(
@@ -291,8 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       if (reading == null) {
         setState(
-          () => _error =
-              'Nenhuma glicose recente em ${health.platformLabel}.',
+          () => _error = 'Nenhuma glicose recente em ${health.platformLabel}.',
         );
         return;
       }
@@ -317,9 +350,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _transcribing = false;
       _error = message;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _applySpeechWords(String words) {
@@ -375,8 +408,8 @@ class _HomeScreenState extends State<HomeScreen> {
         tooltip: _transcribing
             ? 'Transcrevendo…'
             : _listening
-                ? 'Parar'
-                : 'Falar',
+            ? 'Parar'
+            : 'Falar',
         onPressed: _transcribing ? null : _toggleFoodSpeech,
         icon: _transcribing
             ? SizedBox(
@@ -422,9 +455,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final message = glucose < 70
         ? 'Glicose $glucose mg/dL está baixa. Deseja calcular mesmo assim?'
         : fallingFast
-            ? 'Glicose $glucose mg/dL com tendência ${_libreReading!.trendLabel}. '
-                'Bolus agora aumenta risco de hipoglicemia. Continuar?'
-            : 'Glicose $glucose mg/dL está muito alta. Deseja calcular mesmo assim?';
+        ? 'Glicose $glucose mg/dL com tendência ${_libreReading!.trendLabel}. '
+              'Bolus agora aumenta risco de hipoglicemia. Continuar?'
+        : 'Glicose $glucose mg/dL está muito alta. Deseja calcular mesmo assim?';
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -560,8 +593,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
 
-      final profileForFactor =
-          await widget.services.profile.fetchCurrent();
+      final profileForFactor = await widget.services.profile.fetchCurrent();
       if (profileForFactor != null) {
         result = const DoseFactor().applyToRecommendation(
           result,
@@ -572,10 +604,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Persist recommendation only — applied stays null until user confirms.
       final health = _healthImport;
-      final fromHealth = health != null &&
+      final fromHealth =
+          health != null &&
           !_glucoseManuallyEdited &&
           _glucoseController.text.trim() == health.glucoseMgdl.toString();
-      final fromLibre = !fromHealth &&
+      final fromLibre =
+          !fromHealth &&
           _libreConnected &&
           !_glucoseManuallyEdited &&
           _autoFilledGlucose != null &&
@@ -583,10 +617,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final glucoseSource = fromHealth
           ? 'health'
           : fromLibre
-              ? 'libre'
-              : 'manual';
-      final recordedAt =
-          fromHealth ? health.recordedAt : DateTime.now();
+          ? 'libre'
+          : 'manual';
+      final recordedAt = fromHealth ? health.recordedAt : DateTime.now();
 
       final entry = await widget.services.entries.saveEntry(
         entryId: entryId,
@@ -605,9 +638,13 @@ class _HomeScreenState extends State<HomeScreen> {
       if (glucoseSource != 'health') {
         unawaited(() async {
           try {
-            final profile =
-                await widget.services.profile.fetchCurrent(applyTheme: false);
-            if (profile?.healthSyncEnabled != true) return;
+            final profile = await widget.services.profile.fetchCurrent(
+              applyTheme: false,
+            );
+            if (profile?.isSupporter != true ||
+                profile?.healthSyncEnabled != true) {
+              return;
+            }
             await widget.services.healthPlatform.writeGlucose(
               glucoseMgdl: glucose,
               recordedAt: recordedAt,
@@ -655,18 +692,16 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) => _BasalLogSheet(
-        services: widget.services,
-        profile: profile,
-      ),
+      builder: (ctx) =>
+          _BasalLogSheet(services: widget.services, profile: profile),
     );
     if (saved == true && mounted) {
       widget.services.notifyEntriesChanged();
       await _checkBasalToday();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Basal registrada')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Basal registrada')));
     }
   }
 
@@ -711,8 +746,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      const Icon(Icons.pending_actions,
-                          color: AppColors.primaryDark),
+                      const Icon(
+                        Icons.pending_actions,
+                        color: AppColors.primaryDark,
+                      ),
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -727,8 +764,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
-                      const Icon(Icons.chevron_right,
-                          color: AppColors.primaryDark),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: AppColors.primaryDark,
+                      ),
                     ],
                   ),
                 ),
@@ -747,8 +786,10 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.warning_amber_rounded,
-                      color: AppColors.warning),
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppColors.warning,
+                  ),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -884,7 +925,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-                if (_libreConnected) ...[
+                if (_supporterReady && !_isSupporter) ...[
+                  SizedBox(height: 10),
+                  SupporterFeatureNotice(onTap: _openSupportTab),
+                ] else if (_supporterReady && _libreConnected) ...[
                   SizedBox(height: 10),
                   Row(
                     children: [
@@ -916,8 +960,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: _libreSyncing
                             ? null
                             : () => unawaited(
-                                  _syncLibre(silent: false, forceFill: true),
-                                ),
+                                _syncLibre(silent: false, forceFill: true),
+                              ),
                         icon: _libreSyncing
                             ? SizedBox(
                                 width: 18,
@@ -931,7 +975,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                ] else ...[
+                ] else if (_supporterReady) ...[
                   SizedBox(height: 10),
                   Row(
                     children: [
@@ -946,8 +990,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _importFromHealth,
-                          icon: const Icon(Icons.monitor_heart_outlined,
-                              size: 18),
+                          icon: const Icon(
+                            Icons.monitor_heart_outlined,
+                            size: 18,
+                          ),
                           label: Text(
                             widget.services.healthPlatform.isSupportedPlatform
                                 ? 'Health'
@@ -1024,9 +1070,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       labelStyle: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 12,
-                        color: selected
-                            ? AppColors.primaryDark
-                            : colors.ink,
+                        color: selected ? AppColors.primaryDark : colors.ink,
                       ),
                     );
                   }).toList(),
@@ -1064,10 +1108,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _transcribing
                             ? 'Transcrevendo o áudio…'
                             : 'Ouvindo… toque no microfone para parar',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.muted,
-                        ),
+                        style: TextStyle(fontSize: 12, color: colors.muted),
                       ),
                     ),
                   SizedBox(height: 12),
@@ -1135,10 +1176,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
                           _photoName!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colors.muted,
-                          ),
+                          style: TextStyle(fontSize: 12, color: colors.muted),
                         ),
                       ),
                   ],
@@ -1171,10 +1209,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _transcribing
                             ? 'Transcrevendo o áudio…'
                             : 'Ouvindo… toque no microfone para parar',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.muted,
-                        ),
+                        style: TextStyle(fontSize: 12, color: colors.muted),
                       ),
                     ),
                   SizedBox(height: 12),
@@ -1211,8 +1246,8 @@ class _HomeScreenState extends State<HomeScreen> {
               _calculating
                   ? 'Calculando...'
                   : (_useAi
-                      ? 'Estimar carbs e calcular'
-                      : 'Calcular com fórmula'),
+                        ? 'Estimar carbs e calcular'
+                        : 'Calcular com fórmula'),
             ),
           ),
           if (_error != null) ...[
@@ -1236,10 +1271,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _BasalLogSheet extends StatefulWidget {
-  const _BasalLogSheet({
-    required this.services,
-    this.profile,
-  });
+  const _BasalLogSheet({required this.services, this.profile});
 
   final AppServices services;
   final Profile? profile;
@@ -1316,9 +1348,11 @@ class _BasalLogSheetState extends State<_BasalLogSheet> {
         insulinName: name.isEmpty ? null : name,
       );
       try {
-        final profile =
-            await widget.services.profile.fetchCurrent(applyTheme: false);
-        if (profile?.healthSyncEnabled == true) {
+        final profile = await widget.services.profile.fetchCurrent(
+          applyTheme: false,
+        );
+        if (profile?.isSupporter == true &&
+            profile?.healthSyncEnabled == true) {
           await widget.services.healthPlatform.writeInsulin(
             units: units,
             recordedAt: _recordedAt,

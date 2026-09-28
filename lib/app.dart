@@ -181,13 +181,10 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
 
   void _subscribeProfileRealtime() {
     _profileSub?.cancel();
-    _profileSub = services.profile.watchCurrent().listen(
-      (profile) {
-        if (profile == null || !_loggedIn) return;
-        unawaited(_applyRemoteProfile(profile));
-      },
-      onError: (_) {},
-    );
+    _profileSub = services.profile.watchCurrent().listen((profile) {
+      if (profile == null || !_loggedIn) return;
+      unawaited(_applyRemoteProfile(profile));
+    }, onError: (_) {});
   }
 
   Future<void> _applyRemoteProfile(Profile profile) async {
@@ -199,7 +196,9 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
         insulinName: profile.basalInsulinName,
         doseU: profile.basalDoseU,
       );
-      await WidgetHealthSync.setEnabled(profile.healthSyncEnabled);
+      await WidgetHealthSync.setEnabled(
+        profile.isSupporter && profile.healthSyncEnabled,
+      );
       unawaited(services.iobLive.refreshFromNetwork());
       services.notifyProfileChanged();
     } catch (_) {}
@@ -209,7 +208,9 @@ class _DiabetesAppState extends State<DiabetesApp> with WidgetsBindingObserver {
     try {
       final profile = await services.profile.fetchCurrent(applyTheme: false);
       if (profile == null) return;
-      await WidgetHealthSync.setEnabled(profile.healthSyncEnabled);
+      await WidgetHealthSync.setEnabled(
+        profile.isSupporter && profile.healthSyncEnabled,
+      );
     } catch (_) {}
   }
 

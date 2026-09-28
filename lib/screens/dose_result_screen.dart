@@ -47,9 +47,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
     _entry = widget.entry;
     _rec = widget.recommendation;
     _appliedController = TextEditingController(
-      text: formatWhole(
-        _entry.appliedInsulin ?? _rec.insulinaRecomendadaU,
-      ),
+      text: formatWhole(_entry.appliedInsulin ?? _rec.insulinaRecomendadaU),
     );
     _carbsController = TextEditingController(
       text: formatWhole(_rec.carboidratosG),
@@ -109,9 +107,9 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
         observacao: 'Recálculo local após ajuste de carboidratos.',
       );
       final updated = await widget.services.entries.updateEntry(
-        _entry.copyWith(
-          recommendedInsulin: next.insulinaRecomendadaU,
-        ).copyWithRaw(next.raw),
+        _entry
+            .copyWith(recommendedInsulin: next.insulinaRecomendadaU)
+            .copyWithRaw(next.raw),
       );
       if (!mounted) return;
       setState(() {
@@ -132,9 +130,12 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
 
   Future<void> _writeHealthAfterConfirm(double applied) async {
     try {
-      final profile =
-          await widget.services.profile.fetchCurrent(applyTheme: false);
-      if (profile?.healthSyncEnabled != true) return;
+      final profile = await widget.services.profile.fetchCurrent(
+        applyTheme: false,
+      );
+      if (profile?.isSupporter != true || profile?.healthSyncEnabled != true) {
+        return;
+      }
       final health = widget.services.healthPlatform;
       final at = _entry.recordedAt;
       if (_rec.carboidratosG > 0) {
@@ -151,11 +152,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
           );
         }
       }
-      await health.writeInsulin(
-        units: applied,
-        recordedAt: at,
-        basal: false,
-      );
+      await health.writeInsulin(units: applied, recordedAt: at, basal: false);
     } catch (_) {}
   }
 
@@ -217,12 +214,14 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
     final sourceLabel = _rec.source == 'manual'
         ? 'Cálculo local (sua fórmula)'
         : _rec.source == 'local_adjust'
-            ? 'Recálculo local (carbs ajustados)'
-            : 'Estimativa de carbs (IA) + sua fórmula';
+        ? 'Recálculo local (carbs ajustados)'
+        : 'Estimativa de carbs (IA) + sua fórmula';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.fromHistory ? 'Detalhe da dose' : 'Resultado da dose'),
+        title: Text(
+          widget.fromHistory ? 'Detalhe da dose' : 'Resultado da dose',
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
@@ -280,12 +279,14 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: _confidenceColor(_rec.confianca)
-                            .withValues(alpha: 0.12),
+                        color: _confidenceColor(
+                          _rec.confianca,
+                        ).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: _confidenceColor(_rec.confianca)
-                              .withValues(alpha: 0.45),
+                          color: _confidenceColor(
+                            _rec.confianca,
+                          ).withValues(alpha: 0.45),
                         ),
                       ),
                       child: Text(
@@ -369,10 +370,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                   SizedBox(height: 12),
                   Text(
                     _rec.observacao!,
-                    style: TextStyle(
-                      color: colors.muted,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: colors.muted, fontSize: 13),
                   ),
                 ],
                 if (!widget.fromHistory || !_confirmed) ...[
@@ -457,10 +455,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
             SizedBox(height: 8),
           ],
           if (!widget.fromHistory)
-            OutlinedButton(
-              onPressed: _newDose,
-              child: const Text('Nova dose'),
-            )
+            OutlinedButton(onPressed: _newDose, child: const Text('Nova dose'))
           else
             OutlinedButton(
               onPressed: () => Navigator.of(context).pop(),

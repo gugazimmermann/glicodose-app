@@ -16,6 +16,7 @@ import {
   type AlertZone,
 } from '../_shared/libre_alerts.ts'
 import { sendFcmToTokens } from '../_shared/fcm.ts'
+import { isSupporterStatus } from '../_shared/supporter.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -237,16 +238,43 @@ Deno.serve(async (req) => {
       return json({ error: error.message }, 500)
     }
 
+    const userIds = (rows ?? []).map((row) => row.user_id as string)
+    const supporterIds = new Set<string>()
+    if (userIds.length > 0) {
+      const { data: profiles, error: profileError } = await admin
+        .from('profiles')
+        .select('id, supporter_status')
+        .in('id', userIds)
+      if (profileError) {
+        return json({ error: profileError.message }, 500)
+      }
+      for (const profile of profiles ?? []) {
+        if (isSupporterStatus(profile.supporter_status as string | null)) {
+          supporterIds.add(profile.id as string)
+        }
+      }
+    }
+
     const results: Array<{
       user_id: string
       ok: boolean
       error?: string
+      skipped?: boolean
       pushed?: boolean
       push_type?: string
     }> = []
 
     for (const row of rows ?? []) {
       const userId = row.user_id as string
+      if (!supporterIds.has(userId)) {
+        results.push({
+          user_id: userId,
+          ok: false,
+          skipped: true,
+          error: 'Apoio inativo',
+        })
+        continue
+      }
       const sync = await syncUserGlucose(admin, userId)
       if (sync.ok) {
         const push = await pushAlertsForUser(admin, userId, true, {

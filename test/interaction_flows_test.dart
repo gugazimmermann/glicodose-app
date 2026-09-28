@@ -31,38 +31,38 @@ void main() {
     AppTime.setLocation(AppTime.defaultLocationName);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('com.llfbandit.record/messages'),
-      (call) async => null,
-    );
+          const MethodChannel('com.llfbandit.record/messages'),
+          (call) async => null,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      ThemePreferenceService.channel,
-      (call) async => null,
-    );
+          ThemePreferenceService.channel,
+          (call) async => null,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dexterous.com/flutter/local_notifications'),
-      (call) async {
-        if (call.method == 'initialize') return true;
-        if (call.method == 'requestNotificationsPermission') return true;
-        return null;
-      },
-    );
+          const MethodChannel('dexterous.com/flutter/local_notifications'),
+          (call) async {
+            if (call.method == 'initialize') return true;
+            if (call.method == 'requestNotificationsPermission') return true;
+            return null;
+          },
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('home_widget'),
-      (call) async => true,
-    );
+          const MethodChannel('home_widget'),
+          (call) async => true,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (call) async => '/tmp',
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => '/tmp',
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/share'),
-      (call) async => null,
-    );
+          const MethodChannel('dev.fluttercommunity.plus/share'),
+          (call) async => null,
+        );
     await Supabase.initialize(
       url: 'https://example.supabase.co',
       publishableKey: 'public-anon-key',
@@ -114,7 +114,9 @@ void main() {
   }
 
   group('HomeScreen interactions', () {
-    testWidgets('AI mode requires food text before calculating', (tester) async {
+    testWidgets('AI mode requires food text before calculating', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create();
       await tester.pumpWidget(
@@ -131,8 +133,9 @@ void main() {
       expect(fake.entries.items, isEmpty);
     });
 
-    testWidgets('manual carbs calculates and opens DoseResultScreen',
-        (tester) async {
+    testWidgets('manual carbs calculates and opens DoseResultScreen', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create();
       await tester.pumpWidget(
@@ -203,6 +206,7 @@ void main() {
     testWidgets('Libre connected fills glucose and syncs', (tester) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create(
+        supporterStatus: 'active',
         libreStatus: LibreConnectionStatus(
           connected: true,
           email: 'libre@test.com',
@@ -233,9 +237,7 @@ void main() {
     testWidgets('pending unconfirmed dose banner opens result', (tester) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create(
-        entries: [
-          sampleEntry(id: 'pending', glucose: 168, applied: null),
-        ],
+        entries: [sampleEntry(id: 'pending', glucose: 168, applied: null)],
       );
       await tester.pumpWidget(
         MaterialApp(
@@ -246,7 +248,10 @@ void main() {
       await settle(tester);
       await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.textContaining('Dose pendente de confirmação'), findsOneWidget);
+      expect(
+        find.textContaining('Dose pendente de confirmação'),
+        findsOneWidget,
+      );
       expect(find.textContaining('168 mg/dL'), findsOneWidget);
       await tester.tap(find.textContaining('Dose pendente de confirmação'));
       await settle(tester);
@@ -291,6 +296,7 @@ void main() {
     testWidgets('falling Libre trend warns before bolus', (tester) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create(
+        supporterStatus: 'active',
         libreStatus: LibreConnectionStatus(
           connected: true,
           email: 't@t.com',
@@ -330,8 +336,9 @@ void main() {
   });
 
   group('DoseResultScreen interactions', () {
-    testWidgets('confirm applied updates entry and shows snackbar',
-        (tester) async {
+    testWidgets('confirm applied updates entry and shows snackbar', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create(
         entries: [sampleEntry(applied: null)],
@@ -402,16 +409,17 @@ void main() {
       await settle(tester);
 
       expect(find.byType(HealthImportScreen), findsOneWidget);
-      expect(find.text('LibreLinkUp'), findsOneWidget);
+      expect(
+        find.textContaining('monitoramento em tempo real'),
+        findsOneWidget,
+      );
     });
   });
 
   group('HistoryScreen interactions', () {
     testWidgets('opens dose detail from list', (tester) async {
       await setLargeSurface(tester);
-      final fake = FakeAppServices.create(
-        entries: [sampleEntry(applied: 5)],
-      );
+      final fake = FakeAppServices.create(entries: [sampleEntry(applied: 5)]);
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -430,9 +438,7 @@ void main() {
 
     testWidgets('deletes entry from overflow menu', (tester) async {
       await setLargeSurface(tester);
-      final fake = FakeAppServices.create(
-        entries: [sampleEntry(applied: 5)],
-      );
+      final fake = FakeAppServices.create(entries: [sampleEntry(applied: 5)]);
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -461,9 +467,7 @@ void main() {
 
     testWidgets('edits entry from overflow menu', (tester) async {
       await setLargeSurface(tester);
-      final fake = FakeAppServices.create(
-        entries: [sampleEntry(applied: 5)],
-      );
+      final fake = FakeAppServices.create(entries: [sampleEntry(applied: 5)]);
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -586,9 +590,7 @@ void main() {
           ),
         ],
       );
-      await tester.pumpWidget(
-        wrap(HistoryChartsTab(services: fake.services)),
-      );
+      await tester.pumpWidget(wrap(HistoryChartsTab(services: fake.services)));
       await settle(tester);
 
       expect(find.text('7 dias'), findsOneWidget);
@@ -632,7 +634,7 @@ void main() {
   group('HealthImportScreen interactions', () {
     testWidgets('connect Libre with fakes updates status UI', (tester) async {
       await setLargeSurface(tester);
-      final fake = FakeAppServices.create();
+      final fake = FakeAppServices.create(supporterStatus: 'active');
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -657,10 +659,12 @@ void main() {
       expect(find.text('follower@example.com'), findsOneWidget);
     });
 
-    testWidgets('shows connected state when fake libre already linked',
-        (tester) async {
+    testWidgets('shows connected state when fake libre already linked', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create(
+        supporterStatus: 'active',
         libreStatus: LibreConnectionStatus(
           connected: true,
           email: 'ja@conectado.com',
@@ -685,10 +689,12 @@ void main() {
       expect(find.textContaining('118'), findsWidgets);
     });
 
-    testWidgets('disconnect Libre confirms and returns to connect form',
-        (tester) async {
+    testWidgets('disconnect Libre confirms and returns to connect form', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create(
+        supporterStatus: 'active',
         libreStatus: LibreConnectionStatus(
           connected: true,
           email: 'sair@example.com',
@@ -719,10 +725,12 @@ void main() {
       expect(find.text('Conectar'), findsOneWidget);
     });
 
-    testWidgets('Atualizar agora shows sync snackbar when linked',
-        (tester) async {
+    testWidgets('Atualizar agora shows sync snackbar when linked', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final fake = FakeAppServices.create(
+        supporterStatus: 'active',
         libreStatus: LibreConnectionStatus(
           connected: true,
           email: 'sync@example.com',
@@ -747,13 +755,16 @@ void main() {
       await settle(tester);
 
       expect(
-        find.textContaining(RegExp(r'Glicemia atualizada|Falha ao sincronizar')),
+        find.textContaining(
+          RegExp(r'Glicemia atualizada|Falha ao sincronizar'),
+        ),
         findsOneWidget,
       );
     });
 
-    testWidgets('Health Connect ready enables sync and imports samples',
-        (tester) async {
+    testWidgets('Health Connect ready enables sync and imports samples', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final now = DateTime.now();
       final health = FakeHealthPlatformService(
@@ -779,7 +790,10 @@ void main() {
           ),
         ],
       );
-      final fake = FakeAppServices.create(health: health);
+      final fake = FakeAppServices.create(
+        supporterStatus: 'active',
+        health: health,
+      );
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -799,8 +813,9 @@ void main() {
       expect(fake.profile.profile?.healthSyncEnabled, isTrue);
     });
 
-    testWidgets('Autorizar e buscar glicose shows reading snackbar',
-        (tester) async {
+    testWidgets('Autorizar e buscar glicose shows reading snackbar', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final health = FakeHealthPlatformService(
         supported: true,
@@ -812,7 +827,10 @@ void main() {
           sourceName: 'CGM',
         ),
       );
-      final fake = FakeAppServices.create(health: health);
+      final fake = FakeAppServices.create(
+        supporterStatus: 'active',
+        health: health,
+      );
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -828,8 +846,9 @@ void main() {
       expect(find.textContaining('Última glicose: 133'), findsOneWidget);
     });
 
-    testWidgets('Importar histórico backfills glicemias via fake',
-        (tester) async {
+    testWidgets('Importar histórico backfills glicemias via fake', (
+      tester,
+    ) async {
       await setLargeSurface(tester);
       final now = DateTime.now();
       final health = FakeHealthPlatformService(
@@ -855,7 +874,10 @@ void main() {
           ),
         ],
       );
-      final fake = FakeAppServices.create(health: health);
+      final fake = FakeAppServices.create(
+        supporterStatus: 'active',
+        health: health,
+      );
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,

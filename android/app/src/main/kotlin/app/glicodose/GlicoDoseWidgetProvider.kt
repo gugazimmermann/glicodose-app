@@ -52,6 +52,32 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
             views.setTextColor(R.id.widget_title, chrome)
             views.setInt(R.id.widget_sync, "setColorFilter", chrome)
 
+            val unlocked = widgetData.getBoolean("widget_unlocked", false)
+            if (!unlocked) {
+                views.setViewVisibility(R.id.widget_sync, View.GONE)
+                views.setViewVisibility(R.id.widget_glucose, View.GONE)
+                views.setViewVisibility(R.id.widget_trend, View.GONE)
+                views.setViewVisibility(R.id.widget_glucose_meta, View.GONE)
+                views.setViewVisibility(R.id.widget_iob, View.GONE)
+                views.setViewVisibility(R.id.widget_status, View.GONE)
+                views.setViewVisibility(R.id.widget_locked, View.VISIBLE)
+                views.setTextViewText(
+                    R.id.widget_locked,
+                    "Ao apoiar o GlicoDose, você pode usar o widget da tela inicial, o Health Connect ou o Apple Health e o monitoramento em tempo real com o LibreLinkUp.",
+                )
+                views.setTextColor(
+                    R.id.widget_locked,
+                    ContextCompat.getColor(context, R.color.widget_ink),
+                )
+                appWidgetManager.updateAppWidget(widgetId, views)
+                return@forEach
+            }
+            views.setViewVisibility(R.id.widget_locked, View.GONE)
+            views.setViewVisibility(R.id.widget_sync, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_glucose, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_glucose_meta, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_iob, View.VISIBLE)
+
             val defaultInk = ContextCompat.getColor(context, R.color.widget_ink)
             val muted = ContextCompat.getColor(context, R.color.widget_muted)
 

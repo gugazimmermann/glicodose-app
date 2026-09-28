@@ -15,20 +15,20 @@ void main() {
     StatusHomeWidgetService.supportedOverride = true;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      switch (call.method) {
-        case 'saveWidgetData':
-          final args = Map<String, dynamic>.from(call.arguments as Map);
-          stored[args['id'] as String] = args['data'];
-          return true;
-        case 'getWidgetData':
-          final args = Map<String, dynamic>.from(call.arguments as Map);
-          return stored[args['id'] as String];
-        case 'updateWidget':
-          return true;
-        default:
-          return null;
-      }
-    });
+          switch (call.method) {
+            case 'saveWidgetData':
+              final args = Map<String, dynamic>.from(call.arguments as Map);
+              stored[args['id'] as String] = args['data'];
+              return true;
+            case 'getWidgetData':
+              final args = Map<String, dynamic>.from(call.arguments as Map);
+              return stored[args['id'] as String];
+            case 'updateWidget':
+              return true;
+            default:
+              return null;
+          }
+        });
   });
 
   tearDown(() {
@@ -38,6 +38,7 @@ void main() {
   });
 
   test('publish writes glucose and iob keys', () async {
+    await StatusHomeWidgetService.setUnlocked(true);
     await StatusHomeWidgetService.publish(
       libreConnected: true,
       reading: LibreGlucoseReading(
@@ -57,8 +58,12 @@ void main() {
   });
 
   test('publish clearGlucose clears reading keys', () async {
+    await StatusHomeWidgetService.setUnlocked(true);
     await StatusHomeWidgetService.publish(
-      reading: LibreGlucoseReading(glucoseMgdl: 100, recordedAt: DateTime.now()),
+      reading: LibreGlucoseReading(
+        glucoseMgdl: 100,
+        recordedAt: DateTime.now(),
+      ),
     );
     await StatusHomeWidgetService.publish(clearGlucose: true, iobU: 0);
     expect(stored[StatusHomeWidgetService.keyHasGlucose], isFalse);
@@ -66,9 +71,13 @@ void main() {
   });
 
   test('clear resets widget state', () async {
+    await StatusHomeWidgetService.setUnlocked(true);
     await StatusHomeWidgetService.publish(
       libreConnected: true,
-      reading: LibreGlucoseReading(glucoseMgdl: 140, recordedAt: DateTime.now()),
+      reading: LibreGlucoseReading(
+        glucoseMgdl: 140,
+        recordedAt: DateTime.now(),
+      ),
       iobU: 2,
       lastError: 'x',
     );
@@ -80,6 +89,7 @@ void main() {
   });
 
   test('publishIobTick updates iob', () async {
+    await StatusHomeWidgetService.setUnlocked(true);
     await StatusHomeWidgetService.publish(
       reading: LibreGlucoseReading(
         glucoseMgdl: 120,
@@ -91,8 +101,26 @@ void main() {
   });
 
   test('isLibreConnected reads stored flag', () async {
+    await StatusHomeWidgetService.setUnlocked(true);
     await StatusHomeWidgetService.publish(libreConnected: true);
     expect(await StatusHomeWidgetService.isLibreConnected(), isTrue);
+  });
+
+  test('locked widget ignores publish and clears on lock', () async {
+    await StatusHomeWidgetService.setUnlocked(true);
+    await StatusHomeWidgetService.publish(iobU: 4, libreConnected: true);
+    expect(stored[StatusHomeWidgetService.keyIobU], 4);
+
+    await StatusHomeWidgetService.setUnlocked(false);
+    expect(stored[StatusHomeWidgetService.keyWidgetUnlocked], isFalse);
+    expect(stored[StatusHomeWidgetService.keyLibreConnected], isFalse);
+    expect(stored[StatusHomeWidgetService.keyIobU], 0);
+    expect(await StatusHomeWidgetService.isUnlocked(), isFalse);
+
+    await StatusHomeWidgetService.publish(iobU: 9, libreConnected: true);
+    await StatusHomeWidgetService.publishIobTick(7);
+    expect(stored[StatusHomeWidgetService.keyIobU], 0);
+    expect(stored[StatusHomeWidgetService.keyLibreConnected], isFalse);
   });
 
   test('unsupported override skips publish', () async {

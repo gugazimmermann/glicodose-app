@@ -3,6 +3,10 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import { syncUserGlucose } from '../_shared/libre_sync.ts'
+import {
+  supporterRequiredMessage,
+  userIsSupporter,
+} from '../_shared/supporter.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,6 +48,9 @@ Deno.serve(async (req) => {
     if (userError || !user) return json({ error: 'Sessão inválida' }, 401)
 
     const admin = createClient(supabaseUrl, serviceKey)
+    if (!(await userIsSupporter(admin, user.id))) {
+      return json({ error: supporterRequiredMessage }, 403)
+    }
     const result = await syncUserGlucose(admin, user.id)
     if (!result.ok) {
       return json({ error: result.error }, result.status)
