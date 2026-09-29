@@ -16,12 +16,14 @@ import 'package:diabetes_app/services/basal_service.dart';
 import 'package:diabetes_app/services/dose_reminder_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/export_service.dart';
+import 'package:diabetes_app/services/food_recipe_service.dart';
 import 'package:diabetes_app/services/glicemia_service.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
 import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/librelinkup_service.dart';
+import 'package:diabetes_app/services/pet_progress_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/push_token_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
@@ -35,16 +37,23 @@ class AppServices {
   factory AppServices(SupabaseClient client) {
     final profile = ProfileService(client);
     final entries = EntryService(client);
+    final glicemias = GlicemiaService(client);
     final badge = IobBadgeService(entries: entries, profile: profile);
     return AppServices.compose(
       auth: AuthService(client),
       profile: profile,
       entries: entries,
       basal: BasalService(client),
-      glicemias: GlicemiaService(client),
+      glicemias: glicemias,
       insulin: InsulinService(client),
+      recipes: FoodRecipeService(client),
       speech: SpeechService(client),
       libre: LibreLinkUpService(client),
+      pets: PetProgressService(
+        client,
+        entries: entries,
+        glicemias: glicemias,
+      ),
       support: SupportService(),
       export: const ExportService(),
       reminders: DoseReminderService(),
@@ -67,8 +76,10 @@ class AppServices {
     required this.basal,
     required this.glicemias,
     required this.insulin,
+    required this.recipes,
     required this.speech,
     required this.libre,
+    required this.pets,
     required this.support,
     required this.export,
     required this.reminders,
@@ -84,8 +95,10 @@ class AppServices {
   final BasalService basal;
   final GlicemiaService glicemias;
   final InsulinService insulin;
+  final FoodRecipeService recipes;
   final SpeechService speech;
   final LibreLinkUpService libre;
+  final PetProgressService pets;
   final SupportService support;
   final ExportService export;
   final DoseReminderService reminders;

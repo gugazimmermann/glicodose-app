@@ -3,12 +3,14 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/basal_reminder_logic.dart';
+import 'package:diabetes_app/utils/dose_format.dart';
 
 /// Schedules post-bolus glucose checks and daily basal reminders.
 class DoseReminderService {
   DoseReminderService();
 
   static const notificationId = 72001;
+  static const fpuNotificationId = 72002;
   static const channelId = 'glicodose_dose_reminders';
   static const channelName = 'Lembretes de dose';
 
@@ -23,8 +25,10 @@ class DoseReminderService {
     await _plugin.initialize(
       settings: const InitializationSettings(android: android, iOS: ios),
     );
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
         channelId,
@@ -67,6 +71,36 @@ class DoseReminderService {
     if (kIsWeb) return;
     await ensureInitialized();
     await _plugin.cancel(id: notificationId);
+  }
+
+  /// Reminder for the delayed fat/protein portion of a meal bolus.
+  Future<void> scheduleFpuBolus({
+    required double units,
+    required int hours,
+  }) async {
+    if (kIsWeb || units <= 0 || hours <= 0) return;
+    await ensureInitialized();
+    AppTime.ensureInitialized();
+    final when = AppTime.now().add(Duration(hours: hours));
+    final amount = formatWhole(units);
+    await _plugin.zonedSchedule(
+      id: fpuNotificationId,
+      title: 'Segunda parte do bolo',
+      body:
+          'Segunda parte do bolo: $amount U. Gordura e proteína desta refeição.',
+      scheduledDate: when,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          channelId,
+          channelName,
+          channelDescription: 'Lembretes de dose e checagem de glicose',
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+    );
   }
 
   /// Daily basal reminders at [timesMinutes] (profile timezone).

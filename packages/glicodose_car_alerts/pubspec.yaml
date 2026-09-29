@@ -1,0 +1,19 @@
+name: glicodose_car_alerts
+description: Heads-up de glicose no Android Auto para o GlicoDose.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.12.1
+  flutter: ">=3.6.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: app.glicodose.car_alerts
+        pluginClass: GlicoDoseCarAlertsPlugin

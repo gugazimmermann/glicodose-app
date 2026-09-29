@@ -178,6 +178,32 @@ async function logAiUsage(opts: {
   }
 }
 
+function formatRecipeAdjustments(
+  rows: Array<{ name?: string | null; note?: string | null }>,
+): string {
+  const parts: string[] = []
+  for (const row of rows) {
+    const name = (row.name ?? '').trim()
+    const note = (row.note ?? '').trim()
+    if (!name || !note) continue
+    parts.push(`${name} — ${note}`)
+  }
+  if (parts.length === 0) return ''
+  return `Ajustes do paciente, com prioridade sobre o item TACO correspondente: ${parts.join('; ')}.`
+}
+
+function finiteWeight(raw: unknown): number | null {
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) return null
+  return Math.round(value)
+}
+
+function finiteGram(raw: unknown): number | null {
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0) return null
+  return Math.round(value)
+}
+
 function normalizeConfidence(raw: unknown): 'baixa' | 'media' | 'alta' {
   const v = String(raw ?? '').toLowerCase().trim()
   if (v === 'baixa' || v === 'low') return 'baixa'
@@ -298,6 +324,11 @@ Deno.serve(async (req) => {
     const foodText = (body.food_text as string | null | undefined)?.trim() || null
     const foodImageUrl = (body.food_image_url as string | null | undefined) || null
     const iobU = Math.max(0, Number(body.iob_u) || 0)
+    const recipeIds = Array.isArray(body.recipe_ids)
+      ? (body.recipe_ids as unknown[]).filter(
+          (id): id is string => typeof id === 'string' && id.trim().length > 0,
+        )
+      : []
 
     if (!Number.isFinite(glucose) || glucose <= 0) {
       return json({ error: 'glicose inválida' }, 400)
@@ -366,6 +397,21 @@ Deno.serve(async (req) => {
     const isf = isfResolved.value
     const ic = icResolved.value
 
+    let recipeAdjustment = ''
+    if (recipeIds.length > 0) {
+      const { data: recipeRows, error: recipeError } = await supabase
+        .from('food_recipes')
+        .select('name, note')
+        .eq('user_id', user.id)
+        .in('id', recipeIds)
+      if (recipeError) {
+        return json({ error: recipeError.message }, 500)
+      }
+      recipeAdjustment = formatRecipeAdjustments(
+        (recipeRows ?? []) as Array<{ name?: string | null; note?: string | null }>,
+      )
+    }
+
     const prompt = `Paciente com diabetes ${tipo}. Sempre faça contagem de carboidratos da refeição, conforme composição alimentar.
 
 Use a tabela TACO (Tabela Brasileira de Composição de Alimentos) como referência principal para estimar carboidratos em gramas.
@@ -373,9 +419,13 @@ Horário no fuso do paciente (${zoned.timeZone}): ${zoned.hm}.
 
 Refeição (texto): ${foodText ?? 'não informado'}
 Foto do alimento/rótulo: ${foodImageUrl ? 'anexada' : 'não informada'}
+${recipeAdjustment ? `\n${recipeAdjustment}\nÓleo e outras gorduras não são carboidrato. A nota só muda a identidade e a porção do alimento em relação à TACO. Diga na observação quando uma receita salva foi usada.\n` : ''}
+Se houver foto, estime também o peso total da comida (peso_g), a gordura (gordura_g) e a proteína (proteina_g), pela TACO.
+Gordura e proteína NÃO entram em carboidratos_g. Óleo extra indicado em receita salva conta em gordura_g, não em carboidrato.
+Sem foto, peso_g, gordura_g e proteina_g são null.
 
 Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
-{"carboidratos_g": number, "confianca": "baixa|media|alta", "observacao": "string curta sobre a estimativa TACO"}`
+{"carboidratos_g": number, "peso_g": number | null, "gordura_g": number | null, "proteina_g": number | null, "confianca": "baixa|media|alta", "observacao": "string curta sobre a estimativa TACO"}`
 
     type ContentPart =
       | { type: 'text'; text: string }
@@ -405,7 +455,7 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
           {
             role: 'system',
             content:
-              'Você estima carboidratos em gramas usando a tabela TACO (Brasil). Inclua confianca (baixa|media|alta). Não calcule insulina. Responda só JSON.',
+              'Você estima carboidratos, e se houver foto também peso, gordura e proteína, usando a tabela TACO (Brasil). Gordura e proteína não entram nos carboidratos; óleo de receita conta só como gordura. Receitas salvas mudam a identidade e a porção. Inclua confianca (baixa|media|alta). Não calcule insulina. Responda só JSON.',
           },
           { role: 'user', content },
         ],
@@ -487,6 +537,9 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
     }
 
     const confianca = normalizeConfidence(parsed.confianca)
+    const pesoG = foodImageUrl ? finiteWeight(parsed.peso_g) : null
+    const gorduraG = foodImageUrl ? finiteGram(parsed.gordura_g) : null
+    const proteinaG = foodImageUrl ? finiteGram(parsed.proteina_g) : null
 
     const { carbs, correcao, bolusComida, doseBruta, doseFinal, iob } =
       computeBolus({
@@ -521,6 +574,9 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
 
     return json({
       carboidratos_g: carbs,
+      peso_g: pesoG,
+      gordura_g: gorduraG,
+      proteina_g: proteinaG,
       confianca,
       correcao_u: correcao,
       bolus_comida_u: bolusComida,

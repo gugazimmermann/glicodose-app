@@ -78,6 +78,10 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="libre_glucose_alerts" />
+        <!-- Lets Android Auto show glucose alerts over the current screen (Maps). -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
         <!-- Warning: Do not change service name (flutter_foreground_task). -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"

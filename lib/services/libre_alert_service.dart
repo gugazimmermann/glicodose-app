@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:glicodose_car_alerts/glicodose_car_alerts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:diabetes_app/models/libre_glucose.dart';
@@ -12,6 +13,9 @@ class LibreAlertService {
 
   static const channelId = 'libre_glucose_alerts';
   static const channelName = 'Alertas de glicose Libre';
+  static const contextChannelId = 'glucose_context_alerts';
+  static const contextChannelName = 'Padrões de glicemia';
+  static const contextNotificationId = 73004;
 
   static const prefEnabled = 'libre_alerts_enabled';
   static const prefHypo = 'libre_alert_hypo_mgdl';
@@ -39,8 +43,10 @@ class LibreAlertService {
     await _plugin.initialize(
       settings: const InitializationSettings(android: android, iOS: ios),
     );
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
         channelId,
@@ -51,19 +57,34 @@ class LibreAlertService {
         enableVibration: true,
       ),
     );
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        contextChannelId,
+        contextChannelName,
+        description: 'Avisos de quedas recorrentes no histórico de glicose',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
     _initialized = true;
   }
 
   static Future<bool> requestPermissions() async {
     if (kIsWeb) return false;
     await ensureInitialized();
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     final androidOk =
         await androidPlugin?.requestNotificationsPermission() ?? true;
-    final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
-        IOSFlutterLocalNotificationsPlugin>();
-    final iosOk = await iosPlugin?.requestPermissions(
+    final iosPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    final iosOk =
+        await iosPlugin?.requestPermissions(
           alert: true,
           badge: true,
           sound: true,
@@ -136,8 +157,7 @@ class LibreAlertService {
     await ensureInitialized();
     final logic = await _logic();
     final now = DateTime.now();
-    final previous =
-        LibreAlertLogic.zoneFromName(prefs.getString(prefZone));
+    final previous = LibreAlertLogic.zoneFromName(prefs.getString(prefZone));
     final decision = logic.evaluateReading(
       reading: reading,
       previousZone: previous,
@@ -179,10 +199,7 @@ class LibreAlertService {
     );
     if (stale.shouldNotify) {
       await _show(stale);
-      await prefs.setString(
-        prefStaleAlertAt,
-        now.toUtc().toIso8601String(),
-      );
+      await prefs.setString(prefStaleAlertAt, now.toUtc().toIso8601String());
     } else {
       await _plugin.cancel(id: LibreAlertLogic.staleNotificationId);
     }
@@ -214,6 +231,25 @@ class LibreAlertService {
         ),
       ),
     );
+    await _showOnAndroidAuto(decision);
+  }
+
+  /// Same notification id, so the existing cancel path also clears the car alert.
+  static Future<void> _showOnAndroidAuto(LibreAlertDecision decision) async {
+    final id = decision.notificationId;
+    if (id == null || decision.title == null) return;
+    final zone = switch (id) {
+      LibreAlertLogic.hypoNotificationId => 'hypo',
+      LibreAlertLogic.hyperNotificationId => 'hyper',
+      _ => null,
+    };
+    if (zone == null) return;
+    await GlicoDoseCarAlerts.show(
+      id: id,
+      title: decision.title!,
+      body: decision.body ?? '',
+      zone: zone,
+    );
   }
 
   /// Show alert from FCM data payload (dedupe IDs with local).
@@ -222,6 +258,10 @@ class LibreAlertService {
     required String title,
     required String body,
   }) async {
+    if (type == 'glucose_context') {
+      await _showContext(title: title, body: body);
+      return;
+    }
     final id = switch (type) {
       'libre_hypo' => LibreAlertLogic.hypoNotificationId,
       'libre_hyper' => LibreAlertLogic.hyperNotificationId,
@@ -236,6 +276,35 @@ class LibreAlertService {
         title: title,
         body: body,
         notificationId: id,
+      ),
+    );
+  }
+
+  static Future<void> _showContext({
+    required String title,
+    required String body,
+  }) async {
+    await ensureInitialized();
+    await _plugin.show(
+      id: contextNotificationId,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          contextChannelId,
+          contextChannelName,
+          channelDescription:
+              'Avisos de quedas recorrentes no histórico de glicose',
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentSound: true,
+          presentBadge: true,
+        ),
       ),
     );
   }

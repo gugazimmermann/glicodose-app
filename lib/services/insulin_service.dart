@@ -1,11 +1,12 @@
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/bolus_calculator.dart';
+import 'package:diabetes_app/services/hypo_carb_calculator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InsulinService {
   InsulinService(this._client, {BolusCalculator? calculator})
-      : _calculator = calculator ?? const BolusCalculator();
+    : _calculator = calculator ?? const BolusCalculator();
 
   final SupabaseClient _client;
   final BolusCalculator _calculator;
@@ -18,6 +19,7 @@ class InsulinService {
     double iobU = 0,
     String? foodText,
     String? foodImageUrl,
+    List<String> recipeIds = const [],
   }) async {
     final response = await _client.functions.invoke(
       'recommend-insulin',
@@ -28,6 +30,7 @@ class InsulinService {
         'iob_u': iobU,
         'food_text': foodText,
         'food_image_url': foodImageUrl,
+        if (recipeIds.isNotEmpty) 'recipe_ids': recipeIds,
       },
     );
 
@@ -44,6 +47,29 @@ class InsulinService {
     return InsulinRecommendation.fromJson(data);
   }
 
+  /// AI names portions for grams already calculated. Throws on network failure.
+  Future<List<HypoCarbPortion>> suggestFastCarbPortions(int carbsG) async {
+    final response = await _client.functions.invoke(
+      'hypo-carbs',
+      body: {'carboidratos_g': carbsG},
+    );
+    if (response.status != 200) {
+      final error = response.data;
+      final message = error is Map && error['error'] != null
+          ? error['error'].toString()
+          : 'Falha ao sugerir porções (${response.status})';
+      throw Exception(message);
+    }
+    final data = Map<String, dynamic>.from(response.data as Map);
+    final raw = data['porcoes'];
+    if (raw is! List) return const [];
+    return [
+      for (final item in raw)
+        if (item is Map)
+          HypoCarbPortion.fromJson(Map<String, dynamic>.from(item)),
+    ];
+  }
+
   /// Fully local: user-provided carbs + profile formula (no OpenAI).
   InsulinRecommendation calculateManual({
     required int glucoseMgdl,
@@ -54,14 +80,17 @@ class InsulinService {
     String source = 'manual',
     String? confianca,
   }) {
-    return _calculator.calculate(
-      glucoseMgdl: glucoseMgdl,
-      carboidratosG: carboidratosG,
-      profile: profile,
-      iobU: iobU,
-      observacao: observacao ?? 'Cálculo local com carboidratos informados.',
-      source: source,
-    ).copyWith(confianca: confianca);
+    return _calculator
+        .calculate(
+          glucoseMgdl: glucoseMgdl,
+          carboidratosG: carboidratosG,
+          profile: profile,
+          iobU: iobU,
+          observacao:
+              observacao ?? 'Cálculo local com carboidratos informados.',
+          source: source,
+        )
+        .copyWith(confianca: confianca);
   }
 
   /// Recalculate locally after the user adjusts carbs on the result screen.

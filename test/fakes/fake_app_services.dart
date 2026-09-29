@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/basal_dose.dart';
 import 'package:diabetes_app/models/entry.dart';
+import 'package:diabetes_app/models/food_recipe.dart';
 import 'package:diabetes_app/models/libre_glucose.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/auth_service.dart';
@@ -12,7 +13,9 @@ import 'package:diabetes_app/services/basal_service.dart';
 import 'package:diabetes_app/services/dose_reminder_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/export_service.dart';
+import 'package:diabetes_app/services/food_recipe_service.dart';
 import 'package:diabetes_app/services/glicemia_service.dart';
+import 'package:diabetes_app/services/glucose_context_logic.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/history_stats.dart';
 import 'package:diabetes_app/services/insulin_service.dart';
@@ -20,6 +23,7 @@ import 'package:diabetes_app/services/iob_badge_service.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/iob_service.dart';
 import 'package:diabetes_app/services/librelinkup_service.dart';
+import 'package:diabetes_app/services/pet_progress_service.dart';
 import 'package:diabetes_app/services/profile_service.dart';
 import 'package:diabetes_app/services/push_token_service.dart';
 import 'package:diabetes_app/services/speech_service.dart';
@@ -81,6 +85,7 @@ class FakeAppServices {
     final g = FakeGlicemiaService(client, seed: glucoseSamples ?? const []);
     final auth = FakeAuthService(client, userId: userId);
     final insulin = InsulinService(client);
+    final recipes = FakeFoodRecipeService(client);
     final speech = FakeSpeechService(client);
     final libre = FakeLibreLinkUpService(
       client,
@@ -101,8 +106,10 @@ class FakeAppServices {
       basal: b,
       glicemias: g,
       insulin: insulin,
+      recipes: recipes,
       speech: speech,
       libre: libre,
+      pets: FakePetProgressService(entries: e, glicemias: g),
       support: support,
       export: export,
       reminders: reminders,
@@ -112,6 +119,54 @@ class FakeAppServices {
       iobLive: iobLive,
     );
     return FakeAppServices._(services, p, e, b);
+  }
+}
+
+class FakeFoodRecipeService extends FoodRecipeService {
+  FakeFoodRecipeService(super.client);
+
+  final List<FoodRecipe> _recipes = [];
+
+  @override
+  Future<List<FoodRecipe>> list() async => List<FoodRecipe>.from(_recipes);
+
+  @override
+  Future<FoodRecipe> create({
+    required String name,
+    required String note,
+  }) async {
+    final recipe = FoodRecipe(
+      id: 'recipe-${_recipes.length + 1}',
+      userId: 'user-1',
+      name: name.trim(),
+      note: note.trim(),
+    );
+    _recipes.insert(0, recipe);
+    return recipe;
+  }
+
+  @override
+  Future<FoodRecipe> update({
+    required String id,
+    required String name,
+    required String note,
+  }) async {
+    final index = _recipes.indexWhere((recipe) => recipe.id == id);
+    final recipe = FoodRecipe(
+      id: id,
+      userId: 'user-1',
+      name: name.trim(),
+      note: note.trim(),
+    );
+    if (index >= 0) {
+      _recipes[index] = recipe;
+    }
+    return recipe;
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    _recipes.removeWhere((recipe) => recipe.id == id);
   }
 }
 
@@ -412,6 +467,9 @@ class FakeGlicemiaService extends GlicemiaService {
   }
 
   @override
+  Future<List<GlucoseContextPattern>> listContextPatterns() async => const [];
+
+  @override
   Future<int> upsertHealthReadings(
     List<PlatformGlucoseReading> readings,
   ) async {
@@ -502,6 +560,12 @@ class FakeDoseReminderService extends DoseReminderService {
 
   @override
   Future<void> cancelPostBolusCheck() async {}
+
+  @override
+  Future<void> scheduleFpuBolus({
+    required double units,
+    required int hours,
+  }) async {}
 
   @override
   Future<void> scheduleBasalReminders({
@@ -644,4 +708,31 @@ class FakeIobLiveController extends IobLiveController {
 
   @override
   Future<void> ensureWidgetRefreshRunning() async {}
+}
+
+class FakePetProgressService extends PetProgressService {
+  FakePetProgressService({
+    required super.entries,
+    required super.glicemias,
+  }) : super(Supabase.instance.client);
+
+  @override
+  Future<PetSnapshot?> refresh(Profile profile) async => null;
+
+  @override
+  Future<void> equip(Profile profile, String? accessoryId) async {}
+
+  @override
+  Future<int> followerCount() async => 0;
+
+  @override
+  Future<List<FamilyPet>> listFamily() async => const [];
+
+  @override
+  Future<FamilyPet> follow(String code) async {
+    throw Exception('Código indisponível neste teste.');
+  }
+
+  @override
+  Future<void> unfollow(String ownerId) async {}
 }

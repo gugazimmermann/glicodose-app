@@ -7,6 +7,7 @@ import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/app_time.dart';
+import 'package:diabetes_app/services/pet_gamification.dart';
 import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 import 'package:diabetes_app/services/theme_preference_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
@@ -49,6 +50,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _nightEndMinute = 359;
   String _timezone = AppTime.defaultLocationName;
   String _theme = 'system';
+  GamificationMode _gamificationMode = GamificationMode.off;
   DateTime? _disclaimerAcceptedAt;
   bool _loading = true;
   bool _saving = false;
@@ -178,6 +180,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _nightEndMinute = profile.nightEndMinute;
         _timezone = profile.timezone;
         _theme = profile.theme;
+        _gamificationMode = profile.gamificationMode;
         _disclaimerAcceptedAt = profile.disclaimerAcceptedAt;
         _shareCode = profile.shareCode;
         _diabetesType = profile.diabetesType ?? Profile.diabetesType1;
@@ -261,6 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         nightEndMinute: _nightEndMinute,
         timezone: _timezone,
         theme: _theme,
+        gamificationMode: _gamificationMode,
         isfSchedule: isfSchedule,
         icSchedule: icSchedule,
         isfMgdlPerU: _ratioResolver.mirrorMidnightValue(isfSchedule),
@@ -824,6 +828,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onSelectionChanged: (sel) {
                             if (sel.isEmpty) return;
                             _onThemeChanged(sel.first);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Pet e conquistas (sincroniza entre dispositivos)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.of(context).muted,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SegmentedButton<GamificationMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: GamificationMode.off,
+                              label: Text('Desligado'),
+                            ),
+                            ButtonSegment(
+                              value: GamificationMode.pet,
+                              label: Text('Pet'),
+                            ),
+                            ButtonSegment(
+                              value: GamificationMode.quiet,
+                              label: Text('Discreto'),
+                            ),
+                          ],
+                          selected: {_gamificationMode},
+                          onSelectionChanged: (sel) {
+                            if (sel.isEmpty) return;
+                            setState(() => _gamificationMode = sel.first);
                           },
                         ),
                       ],

@@ -130,6 +130,7 @@ void main() {
       await settle(tester);
 
       expect(find.textContaining('Informe o alimento'), findsOneWidget);
+      expect(find.text('Gordura (g)'), findsNothing);
       expect(fake.entries.items, isEmpty);
     });
 
@@ -152,6 +153,8 @@ void main() {
       await settle(tester);
 
       expect(find.text('Calcular com fórmula'), findsOneWidget);
+      expect(find.text('Gordura (g)'), findsOneWidget);
+      expect(find.text('Proteína (g)'), findsOneWidget);
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Carboidratos (g)'),
         '40',

@@ -25,6 +25,7 @@ class Entry {
   final double? recommendedInsulin;
   final double? appliedInsulin;
   final Map<String, dynamic>? gptRawResponse;
+
   /// manual | health | libre
   final String? glucoseSource;
   final String? healthGlucoseUuid;
@@ -160,6 +161,7 @@ class InsulinRecommendation {
   final int? metaMgdl;
   final String? metaPeriodo;
   final String? horarioBr;
+
   /// AI carb confidence: baixa | media | alta
   final String? confianca;
   final Map<String, dynamic>? raw;
@@ -168,6 +170,31 @@ class InsulinRecommendation {
     if (metaMgdl == null) return null;
     final periodo = metaPeriodo ?? '';
     return 'Meta aplicada: $metaMgdl mg/dL${periodo.isEmpty ? '' : ' ($periodo)'}';
+  }
+
+  /// Estimated food weight from the photo, in grams. Null when absent.
+  int? get pesoG {
+    final value = raw?['peso_g'];
+    if (value is! num) return null;
+    final grams = value.round();
+    if (grams <= 0) return null;
+    return grams;
+  }
+
+  /// Null when the key was not estimated. Zero is a real estimate.
+  double? get gorduraG => _optionalGram(raw?['gordura_g']);
+
+  double? get proteinaG => _optionalGram(raw?['proteina_g']);
+
+  double? get fpuLaterU => _optionalGram(raw?['fpu_u']);
+
+  int? get fpuLaterHours {
+    final value = raw?['fpu_horas'];
+    if (value == null) return null;
+    if (value is! num) return null;
+    final hours = value.round();
+    if (hours <= 0) return null;
+    return hours;
   }
 
   String get confiancaLabel {
@@ -238,8 +265,7 @@ class InsulinRecommendation {
       carboidratosG: carboidratosG ?? this.carboidratosG,
       correcaoU: correcaoU ?? this.correcaoU,
       bolusComidaU: bolusComidaU ?? this.bolusComidaU,
-      insulinaRecomendadaU:
-          insulinaRecomendadaU ?? this.insulinaRecomendadaU,
+      insulinaRecomendadaU: insulinaRecomendadaU ?? this.insulinaRecomendadaU,
       iobU: iobU ?? this.iobU,
       observacao: observacao ?? this.observacao,
       source: source ?? this.source,
@@ -256,5 +282,12 @@ double _finite(Object? value, [double fallback = 0]) {
   if (value is! num) return fallback;
   final d = value.toDouble();
   if (d.isNaN || d.isInfinite) return fallback;
+  return d;
+}
+
+double? _optionalGram(Object? value) {
+  if (value == null || value is! num) return null;
+  final d = value.toDouble();
+  if (d.isNaN || d.isInfinite || d < 0) return null;
   return d;
 }

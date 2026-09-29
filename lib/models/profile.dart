@@ -1,3 +1,4 @@
+import 'package:diabetes_app/services/pet_gamification.dart';
 import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 
 class Profile {
@@ -11,10 +12,12 @@ class Profile {
     this.nightEndMinute = 359,
     this.timezone = 'America/Sao_Paulo',
     this.theme = 'system',
+    this.gamificationMode = GamificationMode.off,
     this.libreAlertsEnabled = false,
     this.libreAlertHypoMgdl = 70,
     this.libreAlertHyperMgdl = 180,
     this.libreAlertStaleMinutes = 20,
+    this.glucoseContextAlertsEnabled = false,
     this.healthSyncEnabled = false,
     this.isfMgdlPerU,
     this.icRatio,
@@ -47,21 +50,31 @@ class Profile {
   final String? diabetesType;
   final int? targetGlucoseMgdl;
   final int? targetNightMgdl;
+
   /// Minutes from midnight (default 20:00 = 1200).
   final int nightStartMinute;
+
   /// Minutes from midnight (default 05:59 = 359).
   final int nightEndMinute;
+
   /// IANA timezone for day/night targets and clinical clocks.
   final String timezone;
+
   /// Appearance: system | light | dark.
   final String theme;
+
+  /// off | pet | quiet. Same engine; only the face changes.
+  final GamificationMode gamificationMode;
   final bool libreAlertsEnabled;
   final int libreAlertHypoMgdl;
   final int libreAlertHyperMgdl;
   final int libreAlertStaleMinutes;
+  final bool glucoseContextAlertsEnabled;
   final bool healthSyncEnabled;
+
   /// Midnight mirror of [isfSchedule] (start_minute == 0).
   final double? isfMgdlPerU;
+
   /// Midnight mirror of [icSchedule] (start_minute == 0).
   final double? icRatio;
   final List<RatioSegment> isfSchedule;
@@ -71,12 +84,15 @@ class Profile {
   final double insulinDurationHours;
   final String? basalInsulinName;
   final double? basalDoseU;
+
   /// Up to 2 daily times as minutes from midnight.
   final List<int> basalTimesMinutes;
   final bool basalReminderEnabled;
   final DateTime? disclaimerAcceptedAt;
+
   /// Unique 6-char code (A-Z0-9) for doctor linking.
   final String? shareCode;
+
   /// Mirrored from RevenueCat (read-only for the client upsert).
   final String? supporterProductId;
   final String supporterStatus;
@@ -150,6 +166,9 @@ class Profile {
           ? (json['timezone'] as String).trim()
           : 'America/Sao_Paulo',
       theme: _parseTheme(json['theme'] as String?),
+      gamificationMode: parseGamificationMode(
+        json['gamification_mode'] as String?,
+      ),
       libreAlertsEnabled: json['libre_alerts_enabled'] == true,
       libreAlertHypoMgdl:
           (json['libre_alert_hypo_mgdl'] as num?)?.toInt() ?? 70,
@@ -157,6 +176,8 @@ class Profile {
           (json['libre_alert_hyper_mgdl'] as num?)?.toInt() ?? 180,
       libreAlertStaleMinutes:
           (json['libre_alert_stale_minutes'] as num?)?.toInt() ?? 20,
+      glucoseContextAlertsEnabled:
+          json['glucose_context_alerts_enabled'] == true,
       healthSyncEnabled: json['health_sync_enabled'] == true,
       isfMgdlPerU: isfScalar,
       icRatio: icScalar,
@@ -204,10 +225,12 @@ class Profile {
       'night_end_minute': nightEndMinute,
       'timezone': timezone,
       'theme': theme,
+      'gamification_mode': gamificationModeLabel(gamificationMode),
       'libre_alerts_enabled': libreAlertsEnabled,
       'libre_alert_hypo_mgdl': libreAlertHypoMgdl,
       'libre_alert_hyper_mgdl': libreAlertHyperMgdl,
       'libre_alert_stale_minutes': libreAlertStaleMinutes,
+      'glucose_context_alerts_enabled': glucoseContextAlertsEnabled,
       'health_sync_enabled': healthSyncEnabled,
       'isf_mgdl_per_u': isfMgdlPerU,
       'ic_ratio': icRatio,
@@ -221,8 +244,9 @@ class Profile {
       'basal_times_minutes': basalTimesMinutes,
       'basal_reminder_enabled': basalReminderEnabled,
       if (disclaimerAcceptedAt != null)
-        'disclaimer_accepted_at':
-            disclaimerAcceptedAt!.toUtc().toIso8601String(),
+        'disclaimer_accepted_at': disclaimerAcceptedAt!
+            .toUtc()
+            .toIso8601String(),
       // share_code is server-owned; include only when already known so upsert
       // never inserts a null into the NOT NULL column.
       if (shareCode != null && shareCode!.trim().isNotEmpty)
@@ -240,10 +264,12 @@ class Profile {
     int? nightEndMinute,
     String? timezone,
     String? theme,
+    GamificationMode? gamificationMode,
     bool? libreAlertsEnabled,
     int? libreAlertHypoMgdl,
     int? libreAlertHyperMgdl,
     int? libreAlertStaleMinutes,
+    bool? glucoseContextAlertsEnabled,
     bool? healthSyncEnabled,
     double? isfMgdlPerU,
     double? icRatio,
@@ -277,11 +303,14 @@ class Profile {
       nightEndMinute: nightEndMinute ?? this.nightEndMinute,
       timezone: timezone ?? this.timezone,
       theme: theme ?? this.theme,
+      gamificationMode: gamificationMode ?? this.gamificationMode,
       libreAlertsEnabled: libreAlertsEnabled ?? this.libreAlertsEnabled,
       libreAlertHypoMgdl: libreAlertHypoMgdl ?? this.libreAlertHypoMgdl,
       libreAlertHyperMgdl: libreAlertHyperMgdl ?? this.libreAlertHyperMgdl,
       libreAlertStaleMinutes:
           libreAlertStaleMinutes ?? this.libreAlertStaleMinutes,
+      glucoseContextAlertsEnabled:
+          glucoseContextAlertsEnabled ?? this.glucoseContextAlertsEnabled,
       healthSyncEnabled: healthSyncEnabled ?? this.healthSyncEnabled,
       isfMgdlPerU: isfMgdlPerU ?? this.isfMgdlPerU,
       icRatio: icRatio ?? this.icRatio,
@@ -289,15 +318,13 @@ class Profile {
       icSchedule: icSchedule ?? this.icSchedule,
       rapidInsulinName: rapidInsulinName ?? this.rapidInsulinName,
       doseStep: doseStep ?? this.doseStep,
-      insulinDurationHours:
-          insulinDurationHours ?? this.insulinDurationHours,
+      insulinDurationHours: insulinDurationHours ?? this.insulinDurationHours,
       basalInsulinName: clearBasalInsulinName
           ? null
           : (basalInsulinName ?? this.basalInsulinName),
       basalDoseU: clearBasalDoseU ? null : (basalDoseU ?? this.basalDoseU),
       basalTimesMinutes: basalTimesMinutes ?? this.basalTimesMinutes,
-      basalReminderEnabled:
-          basalReminderEnabled ?? this.basalReminderEnabled,
+      basalReminderEnabled: basalReminderEnabled ?? this.basalReminderEnabled,
       disclaimerAcceptedAt: clearDisclaimer
           ? null
           : (disclaimerAcceptedAt ?? this.disclaimerAcceptedAt),

@@ -112,6 +112,11 @@ export type FcmSendResult = {
   invalidTokens: string[]
 }
 
+export type FcmTarget = {
+  token: string
+  platform?: string | null
+}
+
 const INVALID_TOKEN_CODES = new Set([
   'UNREGISTERED',
   'NOT_FOUND',
@@ -139,8 +144,56 @@ function isInvalidTokenError(body: string): boolean {
   )
 }
 
+function fcmData(payload: FcmPayload): Record<string, string> {
+  return {
+    type: payload.type,
+    title: payload.title,
+    body: payload.body,
+    ...(payload.glucose_mgdl ? { glucose_mgdl: payload.glucose_mgdl } : {}),
+    ...(payload.trend ? { trend: payload.trend } : {}),
+  }
+}
+
+function messageFor(target: FcmTarget, payload: FcmPayload) {
+  const data = fcmData(payload)
+  // Android must stay data-only. A notification payload is drawn by the system
+  // without CarAppExtender and never appears over Maps.
+  if (target.platform === 'android') {
+    return {
+      message: {
+        token: target.token,
+        data,
+        android: { priority: 'HIGH' },
+      },
+    }
+  }
+  return {
+    message: {
+      token: target.token,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+      },
+      data,
+      apns: {
+        headers: { 'apns-priority': '10' },
+        payload: {
+          aps: {
+            alert: {
+              title: payload.title,
+              body: payload.body,
+            },
+            sound: 'default',
+            'content-available': 1,
+          },
+        },
+      },
+    },
+  }
+}
+
 export async function sendFcmToTokens(
-  tokens: string[],
+  tokens: FcmTarget[],
   payload: FcmPayload,
 ): Promise<FcmSendResult> {
   const sa = parseServiceAccount()
@@ -158,40 +211,8 @@ export async function sendFcmToTokens(
   let failed = 0
   const invalidTokens: string[] = []
 
-  for (const token of tokens) {
-    const body = {
-      message: {
-        token,
-        notification: {
-          title: payload.title,
-          body: payload.body,
-        },
-        data: {
-          type: payload.type,
-          title: payload.title,
-          body: payload.body,
-          ...(payload.glucose_mgdl
-            ? { glucose_mgdl: payload.glucose_mgdl }
-            : {}),
-          ...(payload.trend ? { trend: payload.trend } : {}),
-        },
-        android: {
-          priority: 'HIGH',
-          notification: {
-            channel_id: 'libre_glucose_alerts',
-          },
-        },
-        apns: {
-          headers: { 'apns-priority': '10' },
-          payload: {
-            aps: {
-              sound: 'default',
-              'content-available': 1,
-            },
-          },
-        },
-      },
-    }
+  for (const target of tokens) {
+    const body = messageFor(target, payload)
 
     try {
       const res = await fetch(url, {
@@ -207,9 +228,9 @@ export async function sendFcmToTokens(
       } else {
         failed++
         const text = await res.text()
-        console.error('FCM send failed', token.slice(0, 12), text)
+        console.error('FCM send failed', target.token.slice(0, 12), text)
         if (isInvalidTokenError(text)) {
-          invalidTokens.push(token)
+          invalidTokens.push(target.token)
         }
       }
     } catch (e) {

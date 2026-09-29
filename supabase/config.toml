@@ -4,6 +4,9 @@
 [functions.recommend-insulin]
 verify_jwt = true
 
+[functions.hypo-carbs]
+verify_jwt = true
+
 [functions.transcribe-food]
 verify_jwt = true
 

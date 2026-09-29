@@ -9,6 +9,7 @@ import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
+import 'package:diabetes_app/widgets/food_recipe_editor.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 
 class DoseResultScreen extends StatefulWidget {
@@ -67,6 +68,18 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
     _appliedController.dispose();
     _carbsController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveRecipe() async {
+    final saved = await showFoodRecipeEditor(
+      context,
+      recipes: widget.services.recipes,
+      initialName: _entry.foodText?.trim() ?? '',
+    );
+    if (saved == null || !mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Receita "${saved.name}" salva.')));
   }
 
   Color _confidenceColor(String? c) {
@@ -176,6 +189,14 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
       widget.services.notifyEntriesChanged();
       await widget.services.iobLive.refreshFromNetwork();
       await widget.services.reminders.schedulePostBolusCheck();
+      final laterU = _rec.fpuLaterU;
+      final laterHours = _rec.fpuLaterHours;
+      if (laterU != null && laterU > 0 && laterHours != null) {
+        await widget.services.reminders.scheduleFpuBolus(
+          units: laterU,
+          hours: laterHours,
+        );
+      }
 
       // Best-effort Health write-back (insulin iOS-only; carbs both).
       unawaited(_writeHealthAfterConfirm(applied));
@@ -186,7 +207,9 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
         SnackBar(
           content: Text(
             wasUnconfirmed
-                ? 'Dose confirmada. Lembrete de checagem em 2 h.'
+                ? (laterU != null && laterU > 0
+                      ? 'Dose confirmada. Checagem em 2 h e segunda parte em $laterHours h.'
+                      : 'Dose confirmada. Lembrete de checagem em 2 h.')
                 : 'Dose aplicada atualizada',
           ),
         ),
@@ -366,6 +389,67 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     ),
                   ],
                 ),
+                if (_rec.gorduraG != null || _rec.proteinaG != null) ...[
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      if (_rec.gorduraG != null)
+                        _MetricChip(
+                          label: 'Gordura',
+                          value: '${formatWhole(_rec.gorduraG)} g',
+                        ),
+                      if (_rec.gorduraG != null && _rec.proteinaG != null)
+                        SizedBox(width: 8),
+                      if (_rec.proteinaG != null)
+                        _MetricChip(
+                          label: 'Proteína',
+                          value: '${formatWhole(_rec.proteinaG)} g',
+                        ),
+                    ],
+                  ),
+                ],
+                if (_rec.pesoG != null) ...[
+                  SizedBox(height: 12),
+                  Text(
+                    'Peso estimado: ${_rec.pesoG} g',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colors.ink,
+                    ),
+                  ),
+                ],
+                if (_rec.fpuLaterU != null &&
+                    _rec.fpuLaterU! > 0 &&
+                    _rec.fpuLaterHours != null) ...[
+                  SizedBox(height: 12),
+                  Text(
+                    'Agora: ${formatWhole(_rec.insulinaRecomendadaU)} U',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: colors.ink,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Depois: ${formatWhole(_rec.fpuLaterU)} U daqui a ${_rec.fpuLaterHours} h',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: colors.ink,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Gordura e proteína atrasam a subida.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      color: colors.muted,
+                    ),
+                  ),
+                ],
                 if (_rec.observacao != null && _rec.observacao!.isNotEmpty) ...[
                   SizedBox(height: 12),
                   Text(
@@ -373,6 +457,15 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     style: TextStyle(color: colors.muted, fontSize: 13),
                   ),
                 ],
+                SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _saveRecipe,
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    label: const Text('Salvar como receita'),
+                  ),
+                ),
                 if (!widget.fromHistory || !_confirmed) ...[
                   SizedBox(height: 16),
                   TextFormField(

@@ -56,6 +56,7 @@ class _HealthImportScreenState extends State<HealthImportScreen> {
 
   Profile? _profile;
   bool _alertsEnabled = false;
+  bool _contextAlertsEnabled = false;
   final _hypoController = TextEditingController(text: '70');
   final _hyperController = TextEditingController(text: '180');
   final _staleController = TextEditingController(text: '20');
@@ -112,6 +113,7 @@ class _HealthImportScreenState extends State<HealthImportScreen> {
         setState(() {
           _profile = profile;
           _alertsEnabled = profile.libreAlertsEnabled;
+          _contextAlertsEnabled = profile.glucoseContextAlertsEnabled;
           _healthSyncEnabled = profile.healthSyncEnabled;
           _hypoController.text = '${profile.libreAlertHypoMgdl}';
           _hyperController.text = '${profile.libreAlertHyperMgdl}';
@@ -177,6 +179,57 @@ class _HealthImportScreenState extends State<HealthImportScreen> {
       setState(() => _profile = saved);
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
+    } finally {
+      if (mounted) setState(() => _alertsSaving = false);
+    }
+  }
+
+  Future<void> _persistContextAlerts(bool enabled) async {
+    if (enabled) {
+      final ok = await LibreAlertService.requestPermissions();
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Permissão de notificação necessária para avisos de glicose.',
+            ),
+          ),
+        );
+      }
+      unawaited(widget.services.pushTokens.register());
+    }
+
+    setState(() {
+      _contextAlertsEnabled = enabled;
+      _alertsSaving = true;
+    });
+
+    try {
+      final current =
+          _profile ??
+          await widget.services.profile.fetchCurrent(applyTheme: false);
+      if (current == null) {
+        if (mounted) {
+          setState(() => _contextAlertsEnabled = !enabled);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Perfil indisponível para salvar o aviso.'),
+            ),
+          );
+        }
+        return;
+      }
+      final saved = await widget.services.profile.upsert(
+        current.copyWith(glucoseContextAlertsEnabled: enabled),
+      );
+      if (!mounted) return;
+      setState(() => _profile = saved);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _contextAlertsEnabled = !enabled);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
@@ -757,6 +810,18 @@ class _HealthImportScreenState extends State<HealthImportScreen> {
                               ? null
                               : (v) => _persistAlerts(enabled: v),
                         ),
+                        if (_status.connected)
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Avisos pelo histórico'),
+                            subtitle: const Text(
+                              'Antes de uma queda que se repete nesse dia e horário. Pode sugerir um lanche de 15g.',
+                            ),
+                            value: _contextAlertsEnabled,
+                            onChanged: _alertsSaving
+                                ? null
+                                : _persistContextAlerts,
+                          ),
                         if (_alertsEnabled) ...[
                           SizedBox(height: 4),
                           TextField(

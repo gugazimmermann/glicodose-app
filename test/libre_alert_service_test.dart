@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:glicodose_car_alerts/glicodose_car_alerts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:diabetes_app/models/libre_glucose.dart';
@@ -14,25 +15,38 @@ void main() {
   AndroidFlutterLocalNotificationsPlugin.registerWith();
 
   const channel = MethodChannel('dexterous.com/flutter/local_notifications');
+  const carChannel = MethodChannel(GlicoDoseCarAlerts.channelName);
+
+  final carShows = <Map<dynamic, dynamic>>[];
 
   setUp(() {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     SharedPreferences.setMockInitialValues({});
+    carShows.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      if (call.method == 'initialize') return true;
-      if (call.method == 'requestNotificationsPermission') return true;
-      if (call.method == 'createNotificationChannel') return null;
-      if (call.method == 'show') return null;
-      if (call.method == 'cancel') return null;
-      return null;
-    });
+          if (call.method == 'initialize') return true;
+          if (call.method == 'requestNotificationsPermission') return true;
+          if (call.method == 'createNotificationChannel') return null;
+          if (call.method == 'show') return null;
+          if (call.method == 'cancel') return null;
+          return null;
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(carChannel, (call) async {
+          if (call.method == 'show') {
+            carShows.add(Map<dynamic, dynamic>.from(call.arguments as Map));
+          }
+          return null;
+        });
   });
 
   tearDown(() {
     debugDefaultTargetPlatformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(carChannel, null);
   });
 
   test('applyFromProfile writes alert prefs', () async {
@@ -94,6 +108,14 @@ void main() {
     expect(prefs.getString(LibreAlertService.prefZone), 'hypo');
     expect(prefs.getString(LibreAlertService.prefLastAlertAt), isNotNull);
     expect(prefs.getString(LibreAlertService.prefLastRecordedAt), isNotNull);
+    expect(carShows, [
+      {
+        'id': LibreAlertLogic.hypoNotificationId,
+        'title': 'Glicose baixa',
+        'body': '55 mg/dL →',
+        'zone': 'hypo',
+      },
+    ]);
   });
 
   test('evaluate skips when libre disconnected', () async {
@@ -114,8 +136,10 @@ void main() {
       LibreAlertService.prefHypo: 70,
       LibreAlertService.prefHyper: 180,
       LibreAlertService.prefZone: 'hypo',
-      LibreAlertService.prefLastAlertAt:
-          DateTime.now().subtract(const Duration(hours: 2)).toUtc().toIso8601String(),
+      LibreAlertService.prefLastAlertAt: DateTime.now()
+          .subtract(const Duration(hours: 2))
+          .toUtc()
+          .toIso8601String(),
     });
     await LibreAlertService.evaluate(
       LibreGlucoseReading(
@@ -143,6 +167,7 @@ void main() {
     await LibreAlertService.recordSyncFailure();
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getInt(LibreAlertService.prefFailCount), 3);
+    expect(carShows, isEmpty);
   });
 
   test('showFromPush maps known types', () async {
@@ -166,6 +191,24 @@ void main() {
       title: 'x',
       body: 'y',
     );
-    expect(LibreAlertLogic.hypoNotificationId, isPositive);
+    await LibreAlertService.showFromPush(
+      type: 'glucose_context',
+      title: 'Padrão de glicemia',
+      body: 'Historicamente, nas terças-feiras às 15h, sua glicemia cai.',
+    );
+    expect(carShows, [
+      {
+        'id': LibreAlertLogic.hypoNotificationId,
+        'title': 'Hipo',
+        'body': '55 mg/dL',
+        'zone': 'hypo',
+      },
+      {
+        'id': LibreAlertLogic.hyperNotificationId,
+        'title': 'Hiper',
+        'body': '250',
+        'zone': 'hyper',
+      },
+    ]);
   });
 }

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:diabetes_app/services/glucose_context_logic.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/history_stats.dart';
 
@@ -42,8 +43,32 @@ class GlicemiaService {
     return samples.reversed.toList();
   }
 
+  Future<List<GlucoseContextPattern>> listContextPatterns() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return const [];
+
+    final rows = await _client
+        .from('glucose_context_patterns')
+        .select(
+          'weekday, hour, median_mgdl, median_drop_mgdl, occurrences, drop_rate, suggest_carbs_g',
+        )
+        .eq('user_id', userId)
+        .order('weekday', ascending: true)
+        .order('hour', ascending: true);
+
+    final out = <GlucoseContextPattern>[];
+    for (final raw in rows as List) {
+      out.add(
+        GlucoseContextPattern.fromJson(Map<String, dynamic>.from(raw as Map)),
+      );
+    }
+    return out;
+  }
+
   /// Upsert Health / platform readings. Returns number of rows attempted.
-  Future<int> upsertHealthReadings(List<PlatformGlucoseReading> readings) async {
+  Future<int> upsertHealthReadings(
+    List<PlatformGlucoseReading> readings,
+  ) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null || readings.isEmpty) return 0;
 
@@ -66,11 +91,13 @@ class GlicemiaService {
     const chunk = 200;
     var count = 0;
     for (var i = 0; i < rows.length; i += chunk) {
-      final slice = rows.sublist(i, i + chunk > rows.length ? rows.length : i + chunk);
-      await _client.from('glicemias').upsert(
-            slice,
-            onConflict: 'user_id,external_id',
-          );
+      final slice = rows.sublist(
+        i,
+        i + chunk > rows.length ? rows.length : i + chunk,
+      );
+      await _client
+          .from('glicemias')
+          .upsert(slice, onConflict: 'user_id,external_id');
       count += slice.length;
     }
     return count;

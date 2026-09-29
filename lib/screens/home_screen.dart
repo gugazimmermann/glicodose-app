@@ -7,22 +7,28 @@ import 'package:uuid/uuid.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
+import 'package:diabetes_app/models/food_recipe.dart';
 import 'package:diabetes_app/models/libre_glucose.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/dose_factor.dart';
+import 'package:diabetes_app/services/fpu_bolus.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
+import 'package:diabetes_app/services/hypo_carb_calculator.dart';
 import 'package:diabetes_app/services/iob_live_controller.dart';
 import 'package:diabetes_app/services/libre_alert_service.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
+import 'package:diabetes_app/services/target_resolver.dart';
 import 'package:diabetes_app/services/widget_health_sync.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/disclaimer_banner.dart';
+import 'package:diabetes_app/widgets/pet_fuel_card.dart';
+import 'package:diabetes_app/widgets/food_recipe_editor.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
 import 'package:diabetes_app/widgets/support_cta_banner.dart';
 import 'package:diabetes_app/widgets/supporter_feature_notice.dart';
@@ -42,6 +48,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final _glucoseController = TextEditingController();
   final _foodController = TextEditingController();
   final _carbsController = TextEditingController();
+  final _fatController = TextEditingController();
+  final _proteinController = TextEditingController();
   final _picker = ImagePicker();
 
   Uint8List? _photoBytes;
@@ -66,6 +74,12 @@ class _HomeScreenState extends State<HomeScreen> {
   DoseSituation _situation = DoseSituation.none;
   Entry? _unconfirmed;
   bool _basalLoggedToday = false;
+  Profile? _doseProfile;
+  HypoCarbPlan? _hypoPlan;
+  bool _hypoAiPending = false;
+  int _hypoRequest = 0;
+  List<FoodRecipe> _recipes = const [];
+  final Set<String> _selectedRecipeIds = {};
 
   IobLiveController get _iobLive => widget.services.iobLive;
 
@@ -77,11 +91,55 @@ class _HomeScreenState extends State<HomeScreen> {
     _iobLive.failed.addListener(_onIobChanged);
     widget.services.selectedTabIndex.addListener(_onTabSelected);
     unawaited(_loadSupporterFlag());
+    unawaited(_loadRecipes());
     unawaited(_checkUnconfirmed());
     unawaited(_checkBasalToday());
     if (_iobLive.snapshot.value.iobU == 0 && !_iobLive.loading.value) {
       unawaited(_iobLive.refreshFromNetwork());
     }
+  }
+
+  Future<void> _loadRecipes() async {
+    try {
+      final recipes = await widget.services.recipes.list();
+      if (!mounted) return;
+      setState(() {
+        _recipes = recipes;
+        _selectedRecipeIds.removeWhere(
+          (id) => recipes.every((recipe) => recipe.id != id),
+        );
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _createRecipe() async {
+    final saved = await showFoodRecipeEditor(
+      context,
+      recipes: widget.services.recipes,
+      initialName: _foodController.text.trim(),
+    );
+    if (saved == null || !mounted) return;
+    setState(() {
+      _recipes = [saved, ..._recipes.where((recipe) => recipe.id != saved.id)];
+      _selectedRecipeIds.add(saved.id);
+    });
+  }
+
+  Future<void> _manageRecipes() async {
+    await showFoodRecipeManager(
+      context,
+      recipes: widget.services.recipes,
+      items: _recipes,
+      onChanged: (next) {
+        if (!mounted) return;
+        setState(() {
+          _recipes = next;
+          _selectedRecipeIds.removeWhere(
+            (id) => next.every((recipe) => recipe.id != id),
+          );
+        });
+      },
+    );
   }
 
   Future<void> _checkUnconfirmed() async {
@@ -111,6 +169,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _glucoseController.dispose();
     _foodController.dispose();
     _carbsController.dispose();
+    _fatController.dispose();
+    _proteinController.dispose();
     super.dispose();
   }
 
@@ -136,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isSupporter = supporter;
         _supporterReady = true;
+        _doseProfile = profile;
       });
       await StatusHomeWidgetService.setUnlocked(supporter);
       await WidgetHealthSync.setEnabled(
@@ -219,6 +280,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _autoFilledGlucose = text;
         _glucoseManuallyEdited = false;
         _healthImport = null;
+        _hypoRequest++;
+        _hypoPlan = null;
+        _hypoAiPending = false;
       }
     });
     if (canFill) {
@@ -264,6 +328,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final trimmed = value.trim();
     _glucoseManuallyEdited =
         trimmed.isNotEmpty && trimmed != (_autoFilledGlucose ?? '');
+    if (_hypoPlan != null || _hypoAiPending) {
+      _hypoRequest++;
+      setState(() {
+        _hypoPlan = null;
+        _hypoAiPending = false;
+      });
+    }
     _updateGlucoseWarning(value);
   }
 
@@ -448,6 +519,55 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  bool _hypoButtonVisible() {
+    final glucose = int.tryParse(_glucoseController.text.trim());
+    final profile = _doseProfile;
+    if (glucose == null || glucose <= 0 || profile == null) return false;
+    if (profile.targetGlucoseMgdl == null || profile.targetNightMgdl == null) {
+      return glucose < 70;
+    }
+    final target = const TargetResolver().resolve(profile).mgdl;
+    return glucose < target;
+  }
+
+  Future<void> _calculateHypo() async {
+    final glucose = int.tryParse(_glucoseController.text.trim());
+    if (glucose == null || glucose <= 0) return;
+    var profile = _doseProfile;
+    profile ??= await widget.services.profile.fetchCurrent();
+    if (!mounted) return;
+    final plan = const HypoCarbCalculator().calculate(
+      glucoseMgdl: glucose,
+      profile: profile ?? const Profile(id: ''),
+      iobU: _iobLive.snapshot.value.iobU,
+    );
+    final request = ++_hypoRequest;
+    setState(() {
+      _doseProfile = profile ?? _doseProfile;
+      _hypoPlan = plan;
+      _hypoAiPending = plan.ready && plan.carbsG > 0;
+    });
+    if (!plan.ready || plan.carbsG <= 0) return;
+    try {
+      final proposed = await widget.services.insulin.suggestFastCarbPortions(
+        plan.carbsG,
+      );
+      if (!mounted || request != _hypoRequest) return;
+      final portions = HypoCarbCalculator.acceptPortions(
+        carbsG: plan.carbsG,
+        proposed: proposed,
+        fallback: plan.portions,
+      );
+      setState(() {
+        _hypoPlan = plan.copyWith(portions: portions);
+        _hypoAiPending = false;
+      });
+    } catch (_) {
+      if (!mounted || request != _hypoRequest) return;
+      setState(() => _hypoAiPending = false);
+    }
+  }
+
   Future<bool> _confirmExtremeGlucoseIfNeeded(int glucose) async {
     final trend = _libreReading?.trend;
     final fallingFast = trend != null && trend <= 2 && glucose < 120;
@@ -495,6 +615,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _clearForm() {
     _foodController.clear();
     _carbsController.clear();
+    _fatController.clear();
+    _proteinController.clear();
     _photoBytes = null;
     _photoName = null;
     _error = null;
@@ -521,6 +643,39 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _glucoseController.clear();
     }
+  }
+
+  double? _optionalGramField(String text) {
+    if (text.trim().isEmpty) return null;
+    final value = parseDecimal(text);
+    if (value == null || value < 0) return null;
+    return value;
+  }
+
+  InsulinRecommendation _withFpu(
+    InsulinRecommendation result,
+    Profile profile,
+  ) {
+    // Typed grams only in manual carbs mode. A photo estimate must not be
+    // overwritten by leftover text in those fields.
+    final fat = _useAi
+        ? result.gorduraG
+        : _optionalGramField(_fatController.text);
+    final protein = _useAi
+        ? result.proteinaG
+        : _optionalGramField(_proteinController.text);
+    if (fat == null && protein == null) return result;
+    final plan = const FpuBolus().calculate(
+      fatG: fat ?? 0,
+      proteinG: protein ?? 0,
+      profile: profile,
+    );
+    final attached = const FpuBolus().attach(result, plan);
+    if (!_useAi || (fat != null && protein != null)) return attached;
+    final raw = Map<String, dynamic>.from(attached.raw ?? {});
+    if (fat == null) raw['gordura_g'] = null;
+    if (protein == null) raw['proteina_g'] = null;
+    return attached.copyWith(raw: raw);
   }
 
   Future<void> _calculate() async {
@@ -578,6 +733,7 @@ class _HomeScreenState extends State<HomeScreen> {
           iobU: iobU,
           foodText: foodText.isEmpty ? null : foodText,
           foodImageUrl: imageUrl,
+          recipeIds: _selectedRecipeIds.toList(),
         );
       } else {
         final profile = await widget.services.profile.fetchCurrent();
@@ -600,6 +756,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _situation,
           doseStep: profileForFactor.doseStep,
         );
+        result = _withFpu(result, profileForFactor);
       }
 
       // Persist recommendation only — applied stays null until user confirms.
@@ -713,6 +870,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
+          PetFuelCard(services: widget.services),
           if (!_isSupporter) ...[
             SupportCtaBanner(
               visible: !_isSupporter,
@@ -1016,9 +1174,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ],
+                if (_hypoButtonVisible()) ...[
+                  SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _hypoAiPending ? null : _calculateHypo,
+                    icon: const Icon(Icons.local_drink_outlined),
+                    label: const Text('Quanto comer para o alvo'),
+                  ),
+                ],
               ],
             ),
           ),
+          if (_hypoPlan != null) ...[
+            SizedBox(height: 12),
+            _HypoCarbCard(plan: _hypoPlan!, pending: _hypoAiPending),
+          ],
           SizedBox(height: 12),
           SectionCard(
             title: 'Alimentação',
@@ -1111,6 +1281,63 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(fontSize: 12, color: colors.muted),
                       ),
                     ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Receitas salvas',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: colors.ink,
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Marque o que está no prato para a IA usar o seu ajuste.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.muted,
+                      height: 1.35,
+                    ),
+                  ),
+                  if (_recipes.isNotEmpty) ...[
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        for (final recipe in _recipes)
+                          FilterChip(
+                            label: Text(recipe.name),
+                            selected: _selectedRecipeIds.contains(recipe.id),
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedRecipeIds.add(recipe.id);
+                                } else {
+                                  _selectedRecipeIds.remove(recipe.id);
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _createRecipe,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Nova receita'),
+                      ),
+                      if (_recipes.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: _manageRecipes,
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          label: const Text('Editar ou excluir'),
+                        ),
+                    ],
+                  ),
                   SizedBox(height: 12),
                   Row(
                     children: [
@@ -1224,6 +1451,39 @@ class _HomeScreenState extends State<HomeScreen> {
                       prefixIcon: Icon(Icons.grain),
                     ),
                     onChanged: (_) => setState(() {}),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Gordura e proteína atrasam a subida. Se preencher, o app sugere uma segunda dose.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.muted,
+                      height: 1.35,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  TextFormField(
+                    controller: _fatController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [decimalInputFormatter],
+                    decoration: const InputDecoration(
+                      labelText: 'Gordura (g)',
+                      helperText: 'Opcional. Vazio conta como zero.',
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  TextFormField(
+                    controller: _proteinController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [decimalInputFormatter],
+                    decoration: const InputDecoration(
+                      labelText: 'Proteína (g)',
+                      helperText: 'Opcional. Vazio conta como zero.',
+                    ),
                   ),
                 ],
               ],
@@ -1446,6 +1706,78 @@ class _BasalLogSheetState extends State<_BasalLogSheet> {
                   )
                 : const Text('Salvar basal'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HypoCarbCard extends StatelessWidget {
+  const _HypoCarbCard({required this.plan, required this.pending});
+
+  final HypoCarbPlan plan;
+  final bool pending;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return SectionCard(
+      title: 'Tratar hipoglicemia',
+      icon: Icons.local_drink_outlined,
+      iconColor: AppColors.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!plan.ready)
+            Text(
+              plan.missingReason ?? HypoCarbCalculator.missingFactors,
+              style: const TextStyle(height: 1.4),
+            )
+          else if (plan.carbsG <= 0)
+            const Text(
+              'Já está no alvo ou acima. Sem carboidrato de correção.',
+              style: TextStyle(height: 1.4),
+            )
+          else ...[
+            Text(
+              '${plan.carbsG} g de carboidrato rápido',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: colors.ink,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              plan.iobU > 0
+                  ? 'Meta ${plan.targetMgdl} mg/dL (${plan.periodLabel}). '
+                        'IOB considerado: ${formatWhole(plan.iobU)} U.'
+                  : 'Meta ${plan.targetMgdl} mg/dL (${plan.periodLabel}).',
+              style: TextStyle(height: 1.35, color: colors.muted),
+            ),
+            SizedBox(height: 12),
+            for (final portion in plan.portions) ...[
+              Text(
+                portion.food,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              Text(portion.quantity, style: const TextStyle(height: 1.35)),
+              if (portion.note != null)
+                Text(portion.note!, style: const TextStyle(height: 1.35)),
+              SizedBox(height: 8),
+            ],
+            Text(
+              HypoCarbPlan.reboundWarning,
+              style: const TextStyle(height: 1.35, fontWeight: FontWeight.w600),
+            ),
+            if (pending) ...[
+              SizedBox(height: 8),
+              Text(
+                'Ajustando as porções…',
+                style: TextStyle(fontSize: 12, color: colors.muted),
+              ),
+            ],
+          ],
         ],
       ),
     );

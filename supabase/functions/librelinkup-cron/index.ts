@@ -16,6 +16,16 @@ import {
   type AlertZone,
 } from '../_shared/libre_alerts.ts'
 import { sendFcmToTokens } from '../_shared/fcm.ts'
+import {
+  detectPatterns,
+  evaluateAlert,
+  LOOKBACK_DAYS,
+  MEAL_QUIET_MINUTES,
+  RECOMPUTE_HOURS,
+  safeTimeZone,
+  zonedParts,
+  type ContextPattern,
+} from '../_shared/glucose_context.ts'
 import { isSupporterStatus } from '../_shared/supporter.ts'
 
 const corsHeaders = {
@@ -151,12 +161,12 @@ async function pushAlertsForUser(
 
   const { data: tokens } = await admin
     .from('device_tokens')
-    .select('token')
+    .select('token, platform')
     .eq('user_id', userId)
 
-  const tokenList = ((tokens ?? []) as Array<{ token: string }>).map(
-    (r) => r.token,
-  )
+  const tokenList = (
+    (tokens ?? []) as Array<{ token: string; platform: string | null }>
+  ).map((r) => ({ token: r.token, platform: r.platform }))
   if (tokenList.length === 0) {
     return { pushed: false }
   }
@@ -197,6 +207,228 @@ async function pushAlertsForUser(
   })
 
   return { pushed: true, type: decision.type }
+}
+
+type ContextProfileRow = {
+  timezone: string | null
+  libre_alert_hypo_mgdl: number | null
+  glucose_context_alerts_enabled: boolean | null
+  glucose_context_computed_at: string | null
+}
+
+async function runGlucoseContext(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  userId: string,
+  now: Date,
+  glucose: { value: number; trend: number | null } | null,
+): Promise<boolean> {
+  const { data: profileRow, error } = await admin
+    .from('profiles')
+    .select(
+      'timezone, libre_alert_hypo_mgdl, glucose_context_alerts_enabled, glucose_context_computed_at',
+    )
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const profile = profileRow as ContextProfileRow | null
+  if (!profile) return false
+
+  await refreshContextPatterns(admin, userId, now, profile)
+
+  if (!profile.glucose_context_alerts_enabled || !glucose) return false
+  return pushContextAlert(admin, userId, now, profile, glucose)
+}
+
+async function refreshContextPatterns(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  userId: string,
+  now: Date,
+  profile: ContextProfileRow,
+): Promise<void> {
+  const computedAt = profile.glucose_context_computed_at
+    ? new Date(profile.glucose_context_computed_at)
+    : null
+  const fresh = computedAt != null &&
+    now.getTime() - computedAt.getTime() < RECOMPUTE_HOURS * 60 * 60 * 1000
+  if (fresh) return
+
+  const since = new Date(
+    now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+  )
+  const samples = await listGlucoseSince(admin, userId, since.toISOString())
+  const patterns = detectPatterns({
+    samples: samples.map((row) => ({
+      glucoseMgdl: row.glucose_mgdl,
+      recordedAt: new Date(row.recorded_at),
+    })),
+    timezone: profile.timezone ?? 'America/Sao_Paulo',
+    now,
+    hypoMgdl: profile.libre_alert_hypo_mgdl ?? 70,
+  })
+
+  const { error: deleteError } = await admin
+    .from('glucose_context_patterns')
+    .delete()
+    .eq('user_id', userId)
+  if (deleteError) throw new Error(deleteError.message)
+
+  if (patterns.length > 0) {
+    const { error: insertError } = await admin
+      .from('glucose_context_patterns')
+      .insert(patterns.map((pattern) => patternRow(userId, now, pattern)))
+    if (insertError) throw new Error(insertError.message)
+  }
+
+  const { error: stampError } = await admin
+    .from('profiles')
+    .update({ glucose_context_computed_at: now.toISOString() })
+    .eq('id', userId)
+  if (stampError) throw new Error(stampError.message)
+}
+
+function patternRow(userId: string, now: Date, pattern: ContextPattern) {
+  return {
+    user_id: userId,
+    weekday: pattern.weekday,
+    hour: pattern.hour,
+    median_mgdl: pattern.medianMgdl,
+    median_drop_mgdl: pattern.medianDropMgdl,
+    occurrences: pattern.occurrences,
+    drop_rate: Number(pattern.dropRate.toFixed(3)),
+    suggest_carbs_g: pattern.suggestCarbsG,
+    computed_at: now.toISOString(),
+  }
+}
+
+async function listGlucoseSince(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  userId: string,
+  sinceIso: string,
+): Promise<Array<{ glucose_mgdl: number; recorded_at: string }>> {
+  const page = 1000
+  const out: Array<{ glucose_mgdl: number; recorded_at: string }> = []
+  for (let from = 0; ; from += page) {
+    const { data, error } = await admin
+      .from('glicemias')
+      .select('glucose_mgdl, recorded_at')
+      .eq('user_id', userId)
+      .gte('recorded_at', sinceIso)
+      .order('recorded_at', { ascending: true })
+      .range(from, from + page - 1)
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as Array<{
+      glucose_mgdl: number
+      recorded_at: string
+    }>
+    out.push(...rows)
+    if (rows.length < page) break
+  }
+  return out
+}
+
+async function pushContextAlert(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  userId: string,
+  now: Date,
+  profile: ContextProfileRow,
+  glucose: { value: number; trend: number | null },
+): Promise<boolean> {
+  const timeZone = safeTimeZone(profile.timezone)
+  const { data: patternRows, error: patternError } = await admin
+    .from('glucose_context_patterns')
+    .select(
+      'weekday, hour, median_mgdl, median_drop_mgdl, occurrences, drop_rate, suggest_carbs_g',
+    )
+    .eq('user_id', userId)
+  if (patternError) throw new Error(patternError.message)
+
+  const patterns: ContextPattern[] = (
+    (patternRows ?? []) as Array<Record<string, unknown>>
+  ).map((row) => ({
+    weekday: Number(row.weekday),
+    hour: Number(row.hour),
+    medianMgdl: Number(row.median_mgdl),
+    medianDropMgdl: Number(row.median_drop_mgdl),
+    occurrences: Number(row.occurrences),
+    dropRate: Number(row.drop_rate),
+    suggestCarbsG: row.suggest_carbs_g == null
+      ? null
+      : Number(row.suggest_carbs_g),
+  }))
+  if (patterns.length === 0) return false
+
+  const { data: stateRows, error: stateError } = await admin
+    .from('glucose_context_alert_state')
+    .select('weekday, hour, last_notified_on')
+    .eq('user_id', userId)
+  if (stateError) throw new Error(stateError.message)
+
+  const lastNotifiedOn: Record<string, string> = {}
+  for (const row of (stateRows ?? []) as Array<Record<string, unknown>>) {
+    const notified = String(row.last_notified_on).slice(0, 10)
+    lastNotifiedOn[`${row.weekday}|${row.hour}`] = notified
+  }
+
+  const mealSince = new Date(
+    now.getTime() - MEAL_QUIET_MINUTES * 60 * 1000,
+  ).toISOString()
+  const { data: meals, error: mealError } = await admin
+    .from('entries')
+    .select('id')
+    .eq('user_id', userId)
+    .gte('recorded_at', mealSince)
+    .limit(1)
+  if (mealError) throw new Error(mealError.message)
+
+  const decision = evaluateAlert({
+    patterns,
+    now: zonedParts(now, timeZone),
+    currentMgdl: glucose.value,
+    hypoMgdl: profile.libre_alert_hypo_mgdl ?? 70,
+    trend: glucose.trend,
+    recentMeal: (meals?.length ?? 0) > 0,
+    lastNotifiedOn,
+  })
+  if (!decision) return false
+
+  const { data: tokens } = await admin
+    .from('device_tokens')
+    .select('token, platform')
+    .eq('user_id', userId)
+  const tokenList = (
+    (tokens ?? []) as Array<{ token: string; platform: string | null }>
+  ).map((row) => ({ token: row.token, platform: row.platform }))
+  if (tokenList.length === 0) return false
+
+  const fcm = await sendFcmToTokens(tokenList, {
+    type: 'glucose_context',
+    title: decision.title,
+    body: decision.body,
+    glucose_mgdl: String(glucose.value),
+  })
+  if (fcm.invalidTokens.length > 0) {
+    await admin
+      .from('device_tokens')
+      .delete()
+      .eq('user_id', userId)
+      .in('token', fcm.invalidTokens)
+  }
+  if (fcm.sent === 0) return false
+
+  const { error: upsertError } = await admin
+    .from('glucose_context_alert_state')
+    .upsert({
+      user_id: userId,
+      weekday: decision.pattern.weekday,
+      hour: decision.pattern.hour,
+      last_notified_on: decision.slotDate,
+    })
+  if (upsertError) throw new Error(upsertError.message)
+  return true
 }
 
 Deno.serve(async (req) => {
@@ -262,6 +494,7 @@ Deno.serve(async (req) => {
       skipped?: boolean
       pushed?: boolean
       push_type?: string
+      context_pushed?: boolean
     }> = []
 
     for (const row of rows ?? []) {
@@ -276,28 +509,43 @@ Deno.serve(async (req) => {
         continue
       }
       const sync = await syncUserGlucose(admin, userId)
+      const now = new Date()
+      const result: {
+        user_id: string
+        ok: boolean
+        error?: string
+        pushed?: boolean
+        push_type?: string
+        context_pushed?: boolean
+      } = sync.ok
+        ? { user_id: userId, ok: true }
+        : { user_id: userId, ok: false, error: sync.error }
       if (sync.ok) {
         const push = await pushAlertsForUser(admin, userId, true, {
           value: sync.glucose.value,
           trend: sync.glucose.trend,
           recordedAt: sync.glucose.recordedAt,
         })
-        results.push({
-          user_id: userId,
-          ok: true,
-          pushed: push.pushed,
-          push_type: push.type,
-        })
+        result.pushed = push.pushed
+        result.push_type = push.type
       } else {
         const push = await pushAlertsForUser(admin, userId, false, null)
-        results.push({
-          user_id: userId,
-          ok: false,
-          error: sync.error,
-          pushed: push.pushed,
-          push_type: push.type,
-        })
+        result.pushed = push.pushed
+        result.push_type = push.type
       }
+      try {
+        result.context_pushed = await runGlucoseContext(
+          admin,
+          userId,
+          now,
+          sync.ok
+            ? { value: sync.glucose.value, trend: sync.glucose.trend }
+            : null,
+        )
+      } catch (contextError) {
+        console.error('glucose context', userId, contextError)
+      }
+      results.push(result)
     }
 
     const okCount = results.filter((r) => r.ok).length
