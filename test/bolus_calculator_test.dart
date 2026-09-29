@@ -138,6 +138,20 @@ void main() {
     expect(night.bolusComidaU, 4);
   });
 
+  test('fractional carbs stay in the count and only insulin is rounded', () {
+    final r = calc.calculate(
+      glucoseMgdl: 110,
+      carboidratosG: 14.6,
+      profile: profile,
+      now: at(12, 0),
+    );
+    // 14.6/10 = 1.46 -> 1 U. Rounding the grams first would use 15 g and 2 U.
+    expect(r.carboidratosG, 14.6);
+    expect(r.raw?['carboidratos_g'], 14.6);
+    expect(r.bolusComidaU, 1);
+    expect(r.insulinaRecomendadaU, 1);
+  });
+
   test('same UTC instant can flip day/night when timezone changes', () {
     const resolver = TargetResolver();
     // 2026-09-16 23:00 UTC = 20:00 Sao Paulo (night) and 19:00 New York (day

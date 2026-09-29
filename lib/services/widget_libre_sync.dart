@@ -65,19 +65,21 @@ class WidgetLibreSync {
       final iobSnap = await IobCache.recompute();
       final iobU = asWholeDose(iobSnap.iobU);
 
-      await StatusHomeWidgetService.publish(
-        libreConnected: true,
-        reading: reading,
-        iobU: iobU,
-        syncing: false,
-        clearError: true,
-      );
       try {
         await LibreAlertService.recordSyncSuccess();
         await LibreAlertService.evaluate(reading, libreConnected: true);
       } catch (e, st) {
         debugPrint('LibreAlertService after sync failed: $e\n$st');
       }
+      final down = await LibreAlertService.sensorDown();
+      await StatusHomeWidgetService.publish(
+        libreConnected: true,
+        reading: down ? null : reading,
+        clearGlucose: down,
+        iobU: iobU,
+        syncing: false,
+        clearError: true,
+      );
       return true;
     } catch (e, st) {
       debugPrint('WidgetLibreSync.refresh failed: $e\n$st');
@@ -89,6 +91,12 @@ class WidgetLibreSync {
       try {
         await LibreAlertService.recordSyncFailure();
       } catch (_) {}
+      if (await LibreAlertService.sensorDown()) {
+        await StatusHomeWidgetService.publish(
+          syncing: false,
+          clearGlucose: true,
+        );
+      }
       if (!showSyncing) {
         try {
           final snap = await IobCache.recompute();

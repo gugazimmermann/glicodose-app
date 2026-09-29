@@ -168,6 +168,56 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getInt(LibreAlertService.prefFailCount), 3);
     expect(carShows, isEmpty);
+    expect(await LibreAlertService.sensorDown(), isTrue);
+  });
+
+  test('sensor down stays through the re-alert wait and clears on a fresh reading',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      LibreAlertService.prefEnabled: true,
+      LibreAlertService.prefStaleMinutes: 20,
+      LibreAlertService.prefFailCount: 2,
+      LibreAlertService.prefLastSuccessSyncAt: DateTime.now()
+          .subtract(const Duration(hours: 2))
+          .toUtc()
+          .toIso8601String(),
+    });
+    await LibreAlertService.recordSyncFailure();
+    expect(await LibreAlertService.sensorDown(), isTrue);
+
+    await LibreAlertService.recordSyncFailure();
+    expect(await LibreAlertService.sensorDown(), isTrue);
+
+    final at = DateTime.now();
+    await LibreAlertService.recordSyncSuccess(at: at);
+    await LibreAlertService.evaluate(
+      LibreGlucoseReading(glucoseMgdl: 110, recordedAt: at, trend: 3),
+    );
+    expect(await LibreAlertService.sensorDown(), isFalse);
+  });
+
+  test('old sample does not clear sensor down during the re-alert wait', () async {
+    SharedPreferences.setMockInitialValues({
+      LibreAlertService.prefEnabled: true,
+      LibreAlertService.prefStaleMinutes: 20,
+      LibreAlertService.prefFailCount: 2,
+      LibreAlertService.prefLastSuccessSyncAt: DateTime.now()
+          .subtract(const Duration(hours: 2))
+          .toUtc()
+          .toIso8601String(),
+    });
+    await LibreAlertService.recordSyncFailure();
+    expect(await LibreAlertService.sensorDown(), isTrue);
+
+    await LibreAlertService.recordSyncSuccess();
+    await LibreAlertService.evaluate(
+      LibreGlucoseReading(
+        glucoseMgdl: 110,
+        recordedAt: DateTime.now().subtract(const Duration(minutes: 40)),
+        trend: 3,
+      ),
+    );
+    expect(await LibreAlertService.sensorDown(), isTrue);
   });
 
   test('showFromPush maps known types', () async {
@@ -210,5 +260,6 @@ void main() {
         'zone': 'hyper',
       },
     ]);
+    expect(await LibreAlertService.sensorDown(), isTrue);
   });
 }

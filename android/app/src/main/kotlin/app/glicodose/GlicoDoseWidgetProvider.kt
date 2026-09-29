@@ -82,6 +82,7 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
             val muted = ContextCompat.getColor(context, R.color.widget_muted)
 
             val connected = widgetData.getBoolean("libre_connected", false)
+            val sensorDown = widgetData.getBoolean("sensor_down", false)
             val hasGlucose = widgetData.getBoolean("has_glucose", false)
             val glucose = widgetData.getInt("glucose_mgdl", 0)
             val trend = widgetData.getString("trend_label", "").orEmpty()
@@ -90,7 +91,13 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
             val syncing = widgetData.getBoolean("syncing", false)
             val lastError = widgetData.getString("last_error", "").orEmpty()
 
-            if (connected && hasGlucose && glucose > 0) {
+            if (sensorDown) {
+                views.setTextViewText(R.id.widget_glucose, "--")
+                views.setTextViewText(R.id.widget_trend, "")
+                views.setTextColor(R.id.widget_glucose, defaultInk)
+                views.setTextColor(R.id.widget_trend, defaultInk)
+                views.setTextViewText(R.id.widget_glucose_meta, "")
+            } else if (connected && hasGlucose && glucose > 0) {
                 views.setTextViewText(R.id.widget_glucose, glucose.toString())
                 views.setTextViewText(R.id.widget_trend, trend)
                 val glucoseColor = ContextCompat.getColor(context, glucoseColorRes(glucose))

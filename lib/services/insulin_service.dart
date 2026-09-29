@@ -1,6 +1,7 @@
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/bolus_calculator.dart';
+import 'package:diabetes_app/services/fpu_bolus.dart';
 import 'package:diabetes_app/services/hypo_carb_calculator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -93,24 +94,33 @@ class InsulinService {
         .copyWith(confianca: confianca);
   }
 
-  /// Recalculate locally after the user adjusts carbs on the result screen.
+  /// Recalculate locally after the user adjusts carbs, fat, or protein.
   InsulinRecommendation recalculateWithCarbs({
     required int glucoseMgdl,
     required double carboidratosG,
     required Profile profile,
     double iobU = 0,
+    double? gorduraG,
+    double? proteinaG,
     String? observacao,
     String source = 'local_adjust',
     String? confianca,
   }) {
-    return calculateManual(
+    final next = calculateManual(
       glucoseMgdl: glucoseMgdl,
       carboidratosG: carboidratosG,
       profile: profile,
       iobU: iobU,
-      observacao: observacao ?? 'Recálculo local após ajuste de carboidratos.',
+      observacao:
+          observacao ?? 'Recálculo local após ajuste de carboidratos.',
       source: source,
       confianca: confianca,
+    );
+    return const FpuBolus().apply(
+      recommendation: next,
+      profile: profile,
+      fatG: gorduraG,
+      proteinG: proteinaG,
     );
   }
 }

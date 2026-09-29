@@ -117,4 +117,86 @@ void main() {
       expect(find.text('Salvar como receita'), findsOneWidget);
     },
   );
+
+  testWidgets('shows FPU and the case without a second dose', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 2200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    Widget screen(InsulinRecommendation recommendation) {
+      return MaterialApp(
+        home: DoseResultScreen(
+          services: services,
+          entry: Entry(
+            id: 'entry-fpu',
+            userId: 'user-1',
+            recordedAt: DateTime.utc(2026, 1, 15, 12),
+            glucoseMgdl: 110,
+            recommendedInsulin: recommendation.insulinaRecomendadaU,
+          ),
+          recommendation: recommendation,
+        ),
+      );
+    }
+
+    await tester.pumpWidget(
+      screen(
+        InsulinRecommendation.fromJson({
+          'carboidratos_g': 40,
+          'gordura_g': 40,
+          'proteina_g': 25,
+          'fpu': 4.6,
+          'fpu_equivalente_g': 46,
+          'fpu_u': 5,
+          'fpu_horas': 8,
+          'correcao_u': 0,
+          'bolus_comida_u': 4,
+          'insulina_recomendada_u': 4,
+        }),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.textContaining('4,6 FPU, 46 g de carboidrato equivalente'),
+      findsOneWidget,
+    );
+    expect(find.text('Depois: 5 U daqui a 8 h'), findsOneWidget);
+    expect(find.text('Ajustar gordura (g)'), findsOneWidget);
+    expect(find.text('Ajustar proteína (g)'), findsOneWidget);
+  });
+
+  testWidgets('says when fat and protein stay under 1 FPU', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 2200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DoseResultScreen(
+          services: services,
+          entry: Entry(
+            id: 'entry-small-fpu',
+            userId: 'user-1',
+            recordedAt: DateTime.utc(2026, 1, 15, 12),
+            glucoseMgdl: 110,
+            recommendedInsulin: 1,
+          ),
+          recommendation: InsulinRecommendation.fromJson({
+            'carboidratos_g': 10,
+            'gordura_g': 4,
+            'proteina_g': 1,
+            'fpu': 0.4,
+            'fpu_equivalente_g': 4,
+            'fpu_u': 0,
+            'correcao_u': 0,
+            'bolus_comida_u': 1,
+            'insulina_recomendada_u': 1,
+          }),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('Sem segunda dose'), findsOneWidget);
+    expect(find.textContaining('0,4 FPU'), findsOneWidget);
+  });
 }

@@ -120,6 +120,21 @@ class LibreAlertLogic {
     );
   }
 
+  /// True while sync, sample age, or repeated failures mean the sensor is down.
+  /// Does not apply the re-alert wait.
+  bool sensorIsDown({
+    required DateTime now,
+    required DateTime? lastSuccessSyncAt,
+    DateTime? sampleRecordedAt,
+    int consecutiveFailures = 0,
+  }) {
+    final syncStale = lastSuccessSyncAt == null ||
+        now.difference(lastSuccessSyncAt) > Duration(minutes: staleMinutes);
+    final sampleStale = sampleRecordedAt != null &&
+        now.difference(sampleRecordedAt) > Duration(minutes: staleMinutes);
+    return syncStale || sampleStale || consecutiveFailures >= 3;
+  }
+
   /// Stale sensor when no successful sync / fresh sample within [staleMinutes].
   LibreAlertDecision evaluateStale({
     required DateTime now,
@@ -133,12 +148,12 @@ class LibreAlertLogic {
     if (!alertsEnabled || !libreConnected) {
       return LibreAlertDecision.none;
     }
-    final syncStale = lastSuccessSyncAt == null ||
-        now.difference(lastSuccessSyncAt) > Duration(minutes: staleMinutes);
-    final sampleStale = sampleRecordedAt != null &&
-        now.difference(sampleRecordedAt) > Duration(minutes: staleMinutes);
-    final stale =
-        syncStale || sampleStale || consecutiveFailures >= 3;
+    final stale = sensorIsDown(
+      now: now,
+      lastSuccessSyncAt: lastSuccessSyncAt,
+      sampleRecordedAt: sampleRecordedAt,
+      consecutiveFailures: consecutiveFailures,
+    );
     if (!stale) return LibreAlertDecision.none;
 
     final due = lastStaleAlertAt == null ||

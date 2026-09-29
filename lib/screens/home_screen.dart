@@ -43,7 +43,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final _glucoseController = TextEditingController();
   final _foodController = TextEditingController();
@@ -70,6 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _libreConnected = false;
   bool _libreSyncing = false;
   LibreGlucoseReading? _libreReading;
+  bool _sensorDown = false;
   StreamSubscription<LibreGlucoseReading?>? _libreSub;
   DoseSituation _situation = DoseSituation.none;
   Entry? _unconfirmed;
@@ -86,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _iobLive.snapshot.addListener(_onIobChanged);
     _iobLive.loading.addListener(_onIobChanged);
     _iobLive.failed.addListener(_onIobChanged);
@@ -94,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(_loadRecipes());
     unawaited(_checkUnconfirmed());
     unawaited(_checkBasalToday());
+    unawaited(_refreshSensorDown());
     if (_iobLive.snapshot.value.iobU == 0 && !_iobLive.loading.value) {
       unawaited(_iobLive.refreshFromNetwork());
     }
@@ -158,6 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _iobLive.snapshot.removeListener(_onIobChanged);
     _iobLive.loading.removeListener(_onIobChanged);
     _iobLive.failed.removeListener(_onIobChanged);
@@ -181,6 +185,36 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onTabSelected() {
     if (widget.services.selectedTabIndex.value != 0) return;
     unawaited(_loadSupporterFlag());
+    unawaited(_refreshSensorDown());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshSensorDown());
+    }
+  }
+
+  Future<void> _refreshSensorDown() async {
+    try {
+      final down = await LibreAlertService.sensorDown();
+      if (!mounted) return;
+      setState(() {
+        _sensorDown = down;
+        if (down) _dropAutoFilledGlucose();
+      });
+    } catch (_) {}
+  }
+
+  /// Clears a sensor-filled value so the field shows its placeholder.
+  void _dropAutoFilledGlucose() {
+    if (_healthImport != null || _glucoseManuallyEdited) return;
+    final current = _glucoseController.text.trim();
+    final auto = _autoFilledGlucose ?? '';
+    if (current.isEmpty || current != auto) return;
+    _glucoseController.clear();
+    _autoFilledGlucose = null;
+    _glucoseWarning = null;
   }
 
   void _openSupportTab() {
@@ -240,6 +274,9 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
+      await _refreshSensorDown();
+      if (!mounted) return;
+
       if (status.latest != null) {
         _applyLibreReading(status.latest!);
       } else {
@@ -254,7 +291,11 @@ class _HomeScreenState extends State<HomeScreen> {
       _libreSub?.cancel();
       _libreSub = widget.services.libre.watchLatestGlucose().listen((reading) {
         if (!mounted || reading == null) return;
-        _applyLibreReading(reading);
+        unawaited(() async {
+          await _refreshSensorDown();
+          if (!mounted) return;
+          _applyLibreReading(reading);
+        }());
       });
 
       await _syncLibre(silent: true);
@@ -264,6 +305,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _applyLibreReading(LibreGlucoseReading reading, {bool force = false}) {
+    if (_sensorDown) {
+      setState(() {
+        _libreReading = reading;
+        _libreConnected = true;
+        _dropAutoFilledGlucose();
+      });
+      unawaited(
+        StatusHomeWidgetService.publish(
+          libreConnected: true,
+          clearGlucose: true,
+          iobU: asWholeDose(_iobLive.snapshot.value.iobU),
+        ),
+      );
+      return;
+    }
+
     final text = reading.glucoseMgdl.toString();
     final current = _glucoseController.text.trim();
     final stillAuto = current.isEmpty || current == (_autoFilledGlucose ?? '');
@@ -304,15 +361,20 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final reading = await widget.services.libre.syncNow();
       if (!mounted) return;
-      _applyLibreReading(reading, force: forceFill);
       try {
         await LibreAlertService.recordSyncSuccess();
         await LibreAlertService.evaluate(reading, libreConnected: true);
       } catch (_) {}
+      if (!mounted) return;
+      await _refreshSensorDown();
+      if (!mounted) return;
+      _applyLibreReading(reading, force: forceFill);
     } catch (e) {
       try {
         await LibreAlertService.recordSyncFailure();
       } catch (_) {}
+      if (!mounted) return;
+      await _refreshSensorDown();
       if (!mounted) return;
       if (!silent) {
         ScaffoldMessenger.of(
@@ -509,7 +571,11 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     final trend = _libreReading?.trend;
-    if (trend != null && trend <= 2 && n != null && n < 120) {
+    if (!_sensorDown &&
+        trend != null &&
+        trend <= 2 &&
+        n != null &&
+        n < 120) {
       final trendMsg =
           'Tendência Libre ${_libreReading!.trendLabel}: glicose em queda — risco de hipo se bolus agora.';
       warning = warning == null ? trendMsg : '$warning\n$trendMsg';
@@ -569,7 +635,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<bool> _confirmExtremeGlucoseIfNeeded(int glucose) async {
-    final trend = _libreReading?.trend;
+    final trend = _sensorDown ? null : _libreReading?.trend;
     final fallingFast = trend != null && trend <= 2 && glucose < 120;
     if (glucose >= 70 && glucose <= 300 && !fallingFast) return true;
     final message = glucose < 70
@@ -645,6 +711,46 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  List<Widget> _fatProteinFields(AppPalette colors, {required bool fromAi}) {
+    return [
+      SizedBox(height: 12),
+      Text(
+        fromAi
+            ? 'Opcional. Se preencher, estes gramas substituem a estimativa da IA.'
+            : 'Gordura e proteína atrasam a subida. Se preencher, o app sugere uma segunda dose.',
+        style: TextStyle(
+          fontSize: 12,
+          color: colors.muted,
+          height: 1.35,
+        ),
+      ),
+      SizedBox(height: 8),
+      TextFormField(
+        controller: _fatController,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [decimalInputFormatter],
+        decoration: InputDecoration(
+          labelText: 'Gordura (g)',
+          helperText: fromAi
+              ? 'Opcional. Vazio usa a estimativa da IA.'
+              : 'Opcional. Vazio conta como zero.',
+        ),
+      ),
+      SizedBox(height: 8),
+      TextFormField(
+        controller: _proteinController,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [decimalInputFormatter],
+        decoration: InputDecoration(
+          labelText: 'Proteína (g)',
+          helperText: fromAi
+              ? 'Opcional. Vazio usa a estimativa da IA.'
+              : 'Opcional. Vazio conta como zero.',
+        ),
+      ),
+    ];
+  }
+
   double? _optionalGramField(String text) {
     if (text.trim().isEmpty) return null;
     final value = parseDecimal(text);
@@ -656,26 +762,17 @@ class _HomeScreenState extends State<HomeScreen> {
     InsulinRecommendation result,
     Profile profile,
   ) {
-    // Typed grams only in manual carbs mode. A photo estimate must not be
-    // overwritten by leftover text in those fields.
-    final fat = _useAi
-        ? result.gorduraG
-        : _optionalGramField(_fatController.text);
-    final protein = _useAi
-        ? result.proteinaG
-        : _optionalGramField(_proteinController.text);
-    if (fat == null && protein == null) return result;
-    final plan = const FpuBolus().calculate(
-      fatG: fat ?? 0,
-      proteinG: protein ?? 0,
+    final typedFat = _optionalGramField(_fatController.text);
+    final typedProtein = _optionalGramField(_proteinController.text);
+    // Filled fields win. In AI mode an empty field keeps the model estimate.
+    final fat = _useAi ? (typedFat ?? result.gorduraG) : typedFat;
+    final protein = _useAi ? (typedProtein ?? result.proteinaG) : typedProtein;
+    return const FpuBolus().apply(
+      recommendation: result,
       profile: profile,
+      fatG: fat,
+      proteinG: protein,
     );
-    final attached = const FpuBolus().attach(result, plan);
-    if (!_useAi || (fat != null && protein != null)) return attached;
-    final raw = Map<String, dynamic>.from(attached.raw ?? {});
-    if (fat == null) raw['gordura_g'] = null;
-    if (protein == null) raw['proteina_g'] = null;
-    return attached.copyWith(raw: raw);
   }
 
   Future<void> _calculate() async {
@@ -1094,6 +1191,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Text(
                           () {
                             final r = _libreReading;
+                            if (_sensorDown) return 'Sensor sem dados';
                             if (r == null) return 'LibreLinkUp conectado';
                             final parts = <String>[
                               'Libre',
@@ -1407,6 +1505,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                   ],
+                  ..._fatProteinFields(colors, fromAi: true),
                 ] else ...[
                   Text(
                     'Informe os carboidratos. A dose usa sua fórmula '
@@ -1452,39 +1551,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Gordura e proteína atrasam a subida. Se preencher, o app sugere uma segunda dose.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colors.muted,
-                      height: 1.35,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  TextFormField(
-                    controller: _fatController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [decimalInputFormatter],
-                    decoration: const InputDecoration(
-                      labelText: 'Gordura (g)',
-                      helperText: 'Opcional. Vazio conta como zero.',
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  TextFormField(
-                    controller: _proteinController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [decimalInputFormatter],
-                    decoration: const InputDecoration(
-                      labelText: 'Proteína (g)',
-                      helperText: 'Opcional. Vazio conta como zero.',
-                    ),
-                  ),
+                  ..._fatProteinFields(colors, fromAi: false),
                 ],
               ],
             ),

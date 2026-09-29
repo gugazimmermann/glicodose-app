@@ -226,12 +226,12 @@ function computeBolus(opts: {
   iob: number
   doseStep: number
 }) {
-  const carbs = Math.max(0, Math.round(opts.carbs))
-  const correcao = Math.max(
-    0,
-    Math.round((opts.glucose - opts.target) / opts.isf),
-  )
-  const bolusComida = Math.max(0, Math.round(carbs / opts.ic))
+    const carbs = Math.max(0, Number.isFinite(opts.carbs) ? opts.carbs : 0)
+    const correcao = Math.max(
+      0,
+      Math.round((opts.glucose - opts.target) / opts.isf),
+    )
+    const bolusComida = Math.max(0, Math.round(carbs / opts.ic))
   const doseBruta = correcao + bolusComida
   const iob = Math.max(0, Math.round(opts.iob))
   const doseFinal = roundToStep(doseBruta - iob, opts.doseStep)
@@ -420,9 +420,10 @@ Horário no fuso do paciente (${zoned.timeZone}): ${zoned.hm}.
 Refeição (texto): ${foodText ?? 'não informado'}
 Foto do alimento/rótulo: ${foodImageUrl ? 'anexada' : 'não informada'}
 ${recipeAdjustment ? `\n${recipeAdjustment}\nÓleo e outras gorduras não são carboidrato. A nota só muda a identidade e a porção do alimento em relação à TACO. Diga na observação quando uma receita salva foi usada.\n` : ''}
-Se houver foto, estime também o peso total da comida (peso_g), a gordura (gordura_g) e a proteína (proteina_g), pela TACO.
+Estime também a gordura (gordura_g) e a proteína (proteina_g), pela TACO, a partir do texto e da foto quando houver.
+O peso total (peso_g) só entra com foto. Sem foto, peso_g é null.
 Gordura e proteína NÃO entram em carboidratos_g. Óleo extra indicado em receita salva conta em gordura_g, não em carboidrato.
-Sem foto, peso_g, gordura_g e proteina_g são null.
+Use null em gordura_g ou proteina_g só quando não der para estimar. Se a incerteza desses gramas for alta, diga na observação.
 
 Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
 {"carboidratos_g": number, "peso_g": number | null, "gordura_g": number | null, "proteina_g": number | null, "confianca": "baixa|media|alta", "observacao": "string curta sobre a estimativa TACO"}`
@@ -455,7 +456,7 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
           {
             role: 'system',
             content:
-              'Você estima carboidratos, e se houver foto também peso, gordura e proteína, usando a tabela TACO (Brasil). Gordura e proteína não entram nos carboidratos; óleo de receita conta só como gordura. Receitas salvas mudam a identidade e a porção. Inclua confianca (baixa|media|alta). Não calcule insulina. Responda só JSON.',
+              'Você estima carboidratos, gordura e proteína pela tabela TACO (Brasil), com texto ou foto. O peso só entra se houver foto. Gordura e proteína não entram nos carboidratos; óleo de receita conta só como gordura. Use null em gordura ou proteína quando não der para estimar, e diga na observação se a incerteza for alta. Receitas salvas mudam a identidade e a porção. Inclua confianca (baixa|media|alta). Não calcule insulina. Responda só JSON.',
           },
           { role: 'user', content },
         ],
@@ -538,8 +539,8 @@ Não calcule insulina. Responda SOMENTE JSON válido, sem markdown:
 
     const confianca = normalizeConfidence(parsed.confianca)
     const pesoG = foodImageUrl ? finiteWeight(parsed.peso_g) : null
-    const gorduraG = foodImageUrl ? finiteGram(parsed.gordura_g) : null
-    const proteinaG = foodImageUrl ? finiteGram(parsed.proteina_g) : null
+    const gorduraG = finiteGram(parsed.gordura_g)
+    const proteinaG = finiteGram(parsed.proteina_g)
 
     const { carbs, correcao, bolusComida, doseBruta, doseFinal, iob } =
       computeBolus({

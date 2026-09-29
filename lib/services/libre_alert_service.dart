@@ -27,6 +27,7 @@ class LibreAlertService {
   static const prefLastSuccessSyncAt = 'libre_alert_last_success_sync_at';
   static const prefStaleAlertAt = 'libre_alert_stale_at';
   static const prefFailCount = 'libre_alert_fail_count';
+  static const prefSensorDown = 'libre_sensor_down';
 
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -110,6 +111,16 @@ class LibreAlertService {
     );
   }
 
+  static Future<bool> sensorDown() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(prefSensorDown) ?? false;
+  }
+
+  static Future<void> _setSensorDown(bool down) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(prefSensorDown, down);
+  }
+
   static Future<void> recordSyncSuccess({DateTime? at}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -142,6 +153,7 @@ class LibreAlertService {
         prefStaleAlertAt,
         DateTime.now().toUtc().toIso8601String(),
       );
+      await _setSensorDown(true);
     }
   }
 
@@ -197,11 +209,19 @@ class LibreAlertService {
       sampleRecordedAt: reading.recordedAt,
       consecutiveFailures: prefs.getInt(prefFailCount) ?? 0,
     );
+    final down = logic.sensorIsDown(
+      now: now,
+      lastSuccessSyncAt: _parseIso(prefs.getString(prefLastSuccessSyncAt)),
+      sampleRecordedAt: reading.recordedAt,
+      consecutiveFailures: prefs.getInt(prefFailCount) ?? 0,
+    );
     if (stale.shouldNotify) {
       await _show(stale);
       await prefs.setString(prefStaleAlertAt, now.toUtc().toIso8601String());
+      await prefs.setBool(prefSensorDown, true);
     } else {
       await _plugin.cancel(id: LibreAlertLogic.staleNotificationId);
+      if (!down) await prefs.setBool(prefSensorDown, false);
     }
   }
 
@@ -269,6 +289,7 @@ class LibreAlertService {
       _ => null,
     };
     if (id == null) return;
+    if (type == 'libre_stale') await _setSensorDown(true);
     await _show(
       LibreAlertDecision(
         zone: LibreAlertZone.ok,

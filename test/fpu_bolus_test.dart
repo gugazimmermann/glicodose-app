@@ -111,4 +111,36 @@ void main() {
     expect(missing.fpuLaterU, isNull);
     expect(missing.fpuLaterHours, isNull);
   });
+
+  test('apply keeps a missing macro null and explains a small FPU', () {
+    const bolus = BolusCalculator();
+    final food = bolus.calculate(
+      glucoseMgdl: 110,
+      carboidratosG: 10,
+      profile: profile,
+      now: at(14),
+    );
+    final attached = fpu.apply(
+      recommendation: food,
+      profile: profile,
+      fatG: 4,
+      proteinG: 1,
+      now: at(14),
+    );
+    expect(attached.gorduraG, 4);
+    expect(attached.proteinaG, 1);
+    expect(attached.fpu, lessThan(1));
+    expect(attached.fpuLaterU, 0);
+    expect(attached.fpuLaterHours, isNull);
+
+    final fatOnly = fpu.apply(
+      recommendation: food,
+      profile: profile,
+      fatG: 40,
+      now: at(14),
+    );
+    expect(fatOnly.gorduraG, 40);
+    expect(fatOnly.proteinaG, isNull);
+    expect(fatOnly.fpuLaterU, greaterThan(0));
+  });
 }

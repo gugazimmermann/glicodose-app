@@ -39,7 +39,7 @@ class BolusCalculator {
     final ic = icResolved?.value ?? profile.icRatio ?? 10;
     final step = profile.doseStep <= 0 ? 1.0 : profile.doseStep;
 
-    final carbs = asWholeDose(carboidratosG).toDouble();
+    final carbs = _grams(carboidratosG);
     final correcao = asWholeDose(
       isf <= 0 ? 0 : _max0((glucoseMgdl - target) / isf),
     ).toDouble();
@@ -91,6 +91,12 @@ class BolusCalculator {
   }
 
   double _max0(double v) => v < 0 ? 0 : v;
+
+  /// Carb grams stay as informed. Only insulin units are rounded.
+  double _grams(double value) {
+    if (value.isNaN || value.isInfinite || value < 0) return 0;
+    return value;
+  }
 
   double _roundToStep(double value, double step) {
     if (step <= 0) return _max0(value);

@@ -186,6 +186,10 @@ class InsulinRecommendation {
 
   double? get proteinaG => _optionalGram(raw?['proteina_g']);
 
+  double? get fpu => _optionalGram(raw?['fpu']);
+
+  double? get fpuEquivalentG => _optionalGram(raw?['fpu_equivalente_g']);
+
   double? get fpuLaterU => _optionalGram(raw?['fpu_u']);
 
   int? get fpuLaterHours {

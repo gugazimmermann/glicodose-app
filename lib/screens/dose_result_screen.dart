@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/fpu_bolus.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/decimal_input.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
@@ -33,6 +34,8 @@ class DoseResultScreen extends StatefulWidget {
 class _DoseResultScreenState extends State<DoseResultScreen> {
   late final TextEditingController _appliedController;
   late final TextEditingController _carbsController;
+  late final TextEditingController _fatController;
+  late final TextEditingController _proteinController;
   late Entry _entry;
   late InsulinRecommendation _rec;
   Profile? _profile;
@@ -51,7 +54,13 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
       text: formatWhole(_entry.appliedInsulin ?? _rec.insulinaRecomendadaU),
     );
     _carbsController = TextEditingController(
-      text: formatWhole(_rec.carboidratosG),
+      text: formatQuantity(_rec.carboidratosG),
+    );
+    _fatController = TextEditingController(
+      text: formatQuantity(_rec.gorduraG),
+    );
+    _proteinController = TextEditingController(
+      text: formatQuantity(_rec.proteinaG),
     );
     _loadProfile();
   }
@@ -67,6 +76,8 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
   void dispose() {
     _appliedController.dispose();
     _carbsController.dispose();
+    _fatController.dispose();
+    _proteinController.dispose();
     super.dispose();
   }
 
@@ -80,6 +91,13 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Receita "${saved.name}" salva.')));
+  }
+
+  double? _optionalGramField(String text) {
+    if (text.trim().isEmpty) return null;
+    final value = parseDecimal(text);
+    if (value == null || value < 0) return null;
+    return value;
   }
 
   Color _confidenceColor(String? c) {
@@ -105,6 +123,17 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
       return;
     }
 
+    final fat = _optionalGramField(_fatController.text);
+    final protein = _optionalGramField(_proteinController.text);
+    if (fat == null && _fatController.text.trim().isNotEmpty) {
+      setState(() => _error = 'Informe a gordura em gramas, ou deixe vazio.');
+      return;
+    }
+    if (protein == null && _proteinController.text.trim().isNotEmpty) {
+      setState(() => _error = 'Informe a proteína em gramas, ou deixe vazio.');
+      return;
+    }
+
     setState(() {
       _recalculating = true;
       _error = null;
@@ -116,6 +145,8 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
         carboidratosG: carbs,
         profile: profile,
         iobU: _rec.iobU,
+        gorduraG: fat,
+        proteinaG: protein,
         confianca: _rec.confianca,
         observacao: 'Recálculo local após ajuste de carboidratos.',
       );
@@ -375,7 +406,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                   children: [
                     _MetricChip(
                       label: 'Carbs',
-                      value: '${formatWhole(_rec.carboidratosG)} g',
+                      value: '${formatQuantity(_rec.carboidratosG)} g',
                     ),
                     SizedBox(width: 8),
                     _MetricChip(
@@ -396,14 +427,14 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                       if (_rec.gorduraG != null)
                         _MetricChip(
                           label: 'Gordura',
-                          value: '${formatWhole(_rec.gorduraG)} g',
+                          value: '${formatQuantity(_rec.gorduraG)} g',
                         ),
                       if (_rec.gorduraG != null && _rec.proteinaG != null)
                         SizedBox(width: 8),
                       if (_rec.proteinaG != null)
                         _MetricChip(
                           label: 'Proteína',
-                          value: '${formatWhole(_rec.proteinaG)} g',
+                          value: '${formatQuantity(_rec.proteinaG)} g',
                         ),
                     ],
                   ),
@@ -423,6 +454,17 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     _rec.fpuLaterU! > 0 &&
                     _rec.fpuLaterHours != null) ...[
                   SizedBox(height: 12),
+                  if (_rec.fpu != null)
+                    Text(
+                      '${formatQuantity(_rec.fpu)} FPU, '
+                      '${formatQuantity(_rec.fpuEquivalentG)} g de carboidrato equivalente',
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.35,
+                        color: colors.muted,
+                      ),
+                    ),
+                  SizedBox(height: 4),
                   Text(
                     'Agora: ${formatWhole(_rec.insulinaRecomendadaU)} U',
                     style: TextStyle(
@@ -443,6 +485,19 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                   SizedBox(height: 4),
                   Text(
                     'Gordura e proteína atrasam a subida.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      color: colors.muted,
+                    ),
+                  ),
+                ] else if (_rec.fpu != null &&
+                    _rec.fpu! < FpuBolus.minFpu &&
+                    (_rec.gorduraG != null || _rec.proteinaG != null)) ...[
+                  SizedBox(height: 12),
+                  Text(
+                    'Gordura e proteína foram contadas '
+                    '(${formatQuantity(_rec.fpu)} FPU). Sem segunda dose.',
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.35,
@@ -476,8 +531,32 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     inputFormatters: [decimalInputFormatter],
                     decoration: const InputDecoration(
                       labelText: 'Ajustar carboidratos (g)',
-                      helperText: 'Recalcula a dose com sua fórmula, sem IA',
+                      helperText: 'Recalcula a dose e a segunda de gordura, sem IA',
                       prefixIcon: Icon(Icons.restaurant_outlined),
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  TextFormField(
+                    controller: _fatController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [decimalInputFormatter],
+                    decoration: const InputDecoration(
+                      labelText: 'Ajustar gordura (g)',
+                      helperText: 'Opcional. Vazio não conta gordura.',
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  TextFormField(
+                    controller: _proteinController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [decimalInputFormatter],
+                    decoration: const InputDecoration(
+                      labelText: 'Ajustar proteína (g)',
+                      helperText: 'Opcional. Vazio não conta proteína.',
                     ),
                   ),
                   SizedBox(height: 10),

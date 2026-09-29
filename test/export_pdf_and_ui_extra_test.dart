@@ -127,6 +127,19 @@ void main() {
       );
       expect(recalc.source, 'local_adjust');
       expect(recalc.insulinaRecomendadaU, lessThan(manual.insulinaRecomendadaU));
+
+      final withFat = insulin.recalculateWithCarbs(
+        glucoseMgdl: 110,
+        carboidratosG: 40,
+        profile: profile,
+        gorduraG: 40,
+        proteinaG: 25,
+      );
+      expect(withFat.carboidratosG, 40);
+      expect(withFat.fpu, closeTo(4.6, 0.001));
+      expect(withFat.fpuEquivalentG, closeTo(46, 0.001));
+      expect(withFat.fpuLaterU, 5);
+      expect(withFat.fpuLaterHours, 8);
     });
   });
 

@@ -1,7 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:diabetes_app/models/libre_glucose.dart';
+import 'package:diabetes_app/services/libre_alert_service.dart';
 import 'package:diabetes_app/services/status_home_widget_service.dart';
 
 void main() {
@@ -12,6 +14,7 @@ void main() {
 
   setUp(() {
     stored.clear();
+    SharedPreferences.setMockInitialValues({});
     StatusHomeWidgetService.supportedOverride = true;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
@@ -68,6 +71,25 @@ void main() {
     await StatusHomeWidgetService.publish(clearGlucose: true, iobU: 0);
     expect(stored[StatusHomeWidgetService.keyHasGlucose], isFalse);
     expect(stored[StatusHomeWidgetService.keyGlucoseMgdl], isNull);
+  });
+
+  test('publish skips glucose while the sensor is down', () async {
+    SharedPreferences.setMockInitialValues({
+      LibreAlertService.prefSensorDown: true,
+    });
+    await StatusHomeWidgetService.setUnlocked(true);
+    await StatusHomeWidgetService.publish(
+      libreConnected: true,
+      reading: LibreGlucoseReading(
+        glucoseMgdl: 140,
+        recordedAt: DateTime.now(),
+      ),
+      iobU: 2,
+    );
+    expect(stored[StatusHomeWidgetService.keySensorDown], isTrue);
+    expect(stored[StatusHomeWidgetService.keyHasGlucose], isFalse);
+    expect(stored[StatusHomeWidgetService.keyGlucoseMgdl], isNull);
+    expect(stored[StatusHomeWidgetService.keyIobU], 2);
   });
 
   test('clear resets widget state', () async {

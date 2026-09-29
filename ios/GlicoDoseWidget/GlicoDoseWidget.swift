@@ -31,6 +31,7 @@ struct GlicoDoseEntry: TimelineEntry {
   let lastError: String
   let transparentBackground: Bool
   let widgetUnlocked: Bool
+  let sensorDown: Bool
 }
 
 struct Provider: AppIntentTimelineProvider {
@@ -46,7 +47,8 @@ struct Provider: AppIntentTimelineProvider {
       syncing: false,
       lastError: "",
       transparentBackground: false,
-      widgetUnlocked: true
+      widgetUnlocked: true,
+      sensorDown: false
     )
   }
 
@@ -84,7 +86,8 @@ struct Provider: AppIntentTimelineProvider {
       syncing: prefs?.bool(forKey: "syncing") ?? false,
       lastError: prefs?.string(forKey: "last_error") ?? "",
       transparentBackground: transparentBackground,
-      widgetUnlocked: prefs?.bool(forKey: "widget_unlocked") ?? false
+      widgetUnlocked: prefs?.bool(forKey: "widget_unlocked") ?? false,
+      sensorDown: prefs?.bool(forKey: "sensor_down") ?? false
     )
   }
 
@@ -115,13 +118,20 @@ struct GlicoDoseWidgetEntryView: View {
   }
 
   private var glucoseColor: Color {
-    if !entry.hasGlucose || entry.glucoseMgdl <= 0 { return .primary }
+    if entry.sensorDown || !entry.hasGlucose || entry.glucoseMgdl <= 0 { return .primary }
     if entry.glucoseMgdl < 70 { return Color(red: 0.89, green: 0.11, blue: 0.14) } // accent
     if entry.glucoseMgdl > 180 { return Color(red: 0.90, green: 0.32, blue: 0.0) } // warning
     return appSuccess
   }
 
+  private var glucoseText: String {
+    if entry.sensorDown { return "--" }
+    if entry.hasGlucose && entry.glucoseMgdl > 0 { return "\(entry.glucoseMgdl)" }
+    return "—"
+  }
+
   private var metaText: String {
+    if entry.sensorDown { return "" }
     if entry.libreConnected && entry.hasGlucose && entry.glucoseMgdl > 0 {
       if entry.glucoseAge.isEmpty { return "mg/dL" }
       return "mg/dL · \(entry.glucoseAge)"
@@ -174,12 +184,12 @@ struct GlicoDoseWidgetEntryView: View {
       }
 
       HStack(alignment: .firstTextBaseline, spacing: 4) {
-        Text(entry.hasGlucose && entry.glucoseMgdl > 0 ? "\(entry.glucoseMgdl)" : "—")
+        Text(glucoseText)
           .font(.system(size: 34, weight: .bold))
           .foregroundColor(glucoseColor)
           .minimumScaleFactor(0.6)
           .lineLimit(1)
-        if !entry.trendLabel.isEmpty {
+        if !entry.sensorDown && !entry.trendLabel.isEmpty {
           Text(entry.trendLabel)
             .font(.title2.weight(.bold))
             .foregroundColor(glucoseColor)
@@ -265,7 +275,8 @@ struct GlicoDoseWidget_Previews: PreviewProvider {
         syncing: false,
         lastError: "",
         transparentBackground: false,
-        widgetUnlocked: true
+        widgetUnlocked: true,
+        sensorDown: false
       )
     )
     .previewContext(WidgetPreviewContext(family: .systemSmall))

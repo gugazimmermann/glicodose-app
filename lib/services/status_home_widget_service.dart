@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
 import 'package:diabetes_app/models/libre_glucose.dart';
+import 'package:diabetes_app/services/libre_alert_service.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 
 /// Publishes glucose + IOB to the Android / iOS home-screen widget.
@@ -24,6 +25,7 @@ class StatusHomeWidgetService {
   static const keySyncing = 'syncing';
   static const keyLastError = 'last_error';
   static const keyUpdatedAt = 'updated_at';
+  static const keySensorDown = 'sensor_down';
 
   /// Test override for [publish]/[clear] support (Linux CI is otherwise skipped).
   @visibleForTesting
@@ -78,6 +80,9 @@ class StatusHomeWidgetService {
   }) async {
     if (!_supported || !await isUnlocked()) return;
     try {
+      final down = await LibreAlertService.sensorDown();
+      await HomeWidget.saveWidgetData<bool>(keySensorDown, down);
+
       if (libreConnected != null) {
         await HomeWidget.saveWidgetData<bool>(
           keyLibreConnected,
@@ -85,7 +90,7 @@ class StatusHomeWidgetService {
         );
       }
 
-      if (clearGlucose) {
+      if (clearGlucose || down) {
         await HomeWidget.saveWidgetData<bool>(keyHasGlucose, false);
         await HomeWidget.saveWidgetData<int?>(keyGlucoseMgdl, null);
         await HomeWidget.saveWidgetData<String?>(keyTrendLabel, null);
@@ -144,7 +149,17 @@ class StatusHomeWidgetService {
   static Future<void> publishIobTick(int iobU) async {
     if (!_supported || !await isUnlocked()) return;
     try {
-      await _refreshGlucoseAgeLabel();
+      final down = await LibreAlertService.sensorDown();
+      await HomeWidget.saveWidgetData<bool>(keySensorDown, down);
+      if (down) {
+        await HomeWidget.saveWidgetData<bool>(keyHasGlucose, false);
+        await HomeWidget.saveWidgetData<int?>(keyGlucoseMgdl, null);
+        await HomeWidget.saveWidgetData<String?>(keyTrendLabel, null);
+        await HomeWidget.saveWidgetData<String?>(keyGlucoseAge, null);
+        await HomeWidget.saveWidgetData<String?>(keyGlucoseRecordedAt, null);
+      } else {
+        await _refreshGlucoseAgeLabel();
+      }
       await HomeWidget.saveWidgetData<int>(keyIobU, asWholeDose(iobU));
       await HomeWidget.saveWidgetData<String>(
         keyUpdatedAt,

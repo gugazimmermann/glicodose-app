@@ -92,6 +92,29 @@ class FpuBolus {
     );
   }
 
+  /// Writes the plan onto [recommendation]. A missing macro stays null.
+  InsulinRecommendation apply({
+    required InsulinRecommendation recommendation,
+    required Profile profile,
+    double? fatG,
+    double? proteinG,
+    tz.TZDateTime? now,
+  }) {
+    if (fatG == null && proteinG == null) return recommendation;
+    final plan = calculate(
+      fatG: fatG ?? 0,
+      proteinG: proteinG ?? 0,
+      profile: profile,
+      now: now,
+    );
+    final attached = attach(recommendation, plan);
+    if (fatG != null && proteinG != null) return attached;
+    final raw = Map<String, dynamic>.from(attached.raw ?? {});
+    if (fatG == null) raw['gordura_g'] = null;
+    if (proteinG == null) raw['proteina_g'] = null;
+    return attached.copyWith(raw: raw);
+  }
+
   InsulinRecommendation attach(
     InsulinRecommendation recommendation,
     FpuPlan plan,
