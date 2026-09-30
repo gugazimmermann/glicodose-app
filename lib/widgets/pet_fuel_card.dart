@@ -20,12 +20,15 @@ class PetFuelCard extends StatefulWidget {
 class _PetFuelCardState extends State<PetFuelCard> {
   PetSnapshot? _snapshot;
   bool _loading = true;
+  bool _reloading = false;
+  bool _reloadQueued = false;
 
   @override
   void initState() {
     super.initState();
     widget.services.entriesRevision.addListener(_reload);
     widget.services.profileRevision.addListener(_reload);
+    widget.services.glucoseRevision.addListener(_reload);
     _reload();
   }
 
@@ -33,10 +36,16 @@ class _PetFuelCardState extends State<PetFuelCard> {
   void dispose() {
     widget.services.entriesRevision.removeListener(_reload);
     widget.services.profileRevision.removeListener(_reload);
+    widget.services.glucoseRevision.removeListener(_reload);
     super.dispose();
   }
 
   Future<void> _reload() async {
+    if (_reloading) {
+      _reloadQueued = true;
+      return;
+    }
+    _reloading = true;
     try {
       final profile = await widget.services.profile.fetchCurrent(
         applyTheme: false,
@@ -59,6 +68,12 @@ class _PetFuelCardState extends State<PetFuelCard> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
+    } finally {
+      _reloading = false;
+      if (_reloadQueued && mounted) {
+        _reloadQueued = false;
+        await _reload();
+      }
     }
   }
 

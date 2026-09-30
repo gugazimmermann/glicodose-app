@@ -338,7 +338,8 @@ class PetGamification {
     final lifetime = _nextLifetime(
       stored: stored,
       today: today,
-      dropsToday: dropsToday,
+      now: now,
+      inRangeRuns: inRangeRuns,
     );
 
     final mood = _mood(
@@ -409,16 +410,45 @@ class PetGamification {
 
   static bool inRange(int mgdl) => mgdl >= lowMgdl && mgdl <= highMgdl;
 
+  /// Banks every in-range hour from [PetStoredState.fuelDay] through today.
+  ///
+  /// The saved day only contributes hours above what was already counted.
+  /// Later days contribute their full total, so a day the app was closed
+  /// still counts once its readings are in the window. With no saved day,
+  /// only today is credited.
   int _nextLifetime({
     required PetStoredState stored,
     required DateTime today,
-    required int dropsToday,
+    required DateTime now,
+    required List<_Span> inRangeRuns,
   }) {
-    final sameDay =
-        stored.fuelDay != null && _dateOnly(stored.fuelDay!) == today;
-    if (!sameDay) return stored.lifetimeDrops + dropsToday;
-    final extra = dropsToday - stored.dropsSavedToday;
-    if (extra <= 0) return stored.lifetimeDrops;
+    int dropsOn(DateTime day) {
+      final start = _dateOnly(day);
+      final end = start == today ? now : start.add(const Duration(days: 1));
+      return _dropsOverlapping(inRangeRuns, start, end);
+    }
+
+    final fuelDay = stored.fuelDay == null
+        ? null
+        : _dateOnly(stored.fuelDay!);
+    if (fuelDay == null || fuelDay.isAfter(today)) {
+      return stored.lifetimeDrops + dropsOn(today);
+    }
+
+    var extra = 0;
+    for (
+      var day = fuelDay;
+      !day.isAfter(today);
+      day = day.add(const Duration(days: 1))
+    ) {
+      final drops = dropsOn(day);
+      if (day == fuelDay) {
+        final delta = drops - stored.dropsSavedToday;
+        if (delta > 0) extra += delta;
+      } else {
+        extra += drops;
+      }
+    }
     return stored.lifetimeDrops + extra;
   }
 
@@ -546,7 +576,7 @@ class PetGamification {
     var soft = 0;
     for (var i = 1; i <= 7; i++) {
       final day = today.subtract(Duration(days: i));
-      if (_isCareDay(day, inRangeRuns, anyRuns)) soft++;
+      if (_dayKind(day, inRangeRuns, anyRuns) == _DayKind.care) soft++;
     }
     if (soft >= 5) earned.add('soft_week');
     return earned;
@@ -680,7 +710,9 @@ class PetGamification {
     for (var day = start;
         day.isBefore(today);
         day = day.add(const Duration(days: 1))) {
-      if (_isCareDay(day, inRangeRuns, anyRuns)) {
+      final kind = _dayKind(day, inRangeRuns, anyRuns);
+      if (kind == _DayKind.uncovered) continue;
+      if (kind == _DayKind.care) {
         days += 1;
         paused = false;
         if (sawGap) sawCareAfterGap = true;
@@ -699,13 +731,19 @@ class PetGamification {
     );
   }
 
-  bool _isCareDay(DateTime day, List<_Span> inRangeRuns, List<_Span> anyRuns) {
+  /// No readings is not a rough day: it neither grows nor pauses the streak.
+  _DayKind _dayKind(
+    DateTime day,
+    List<_Span> inRangeRuns,
+    List<_Span> anyRuns,
+  ) {
     final start = _dateOnly(day);
     final end = start.add(const Duration(days: 1));
     final covered = _hoursOverlapping(anyRuns, start, end);
-    if (covered < 4) return false;
+    if (covered < 4) return _DayKind.uncovered;
     final inside = _hoursOverlapping(inRangeRuns, start, end);
-    return inside / covered >= 0.5;
+    if (inside / covered >= 0.5) return _DayKind.care;
+    return _DayKind.rough;
   }
 
   bool _windowCovered(
@@ -843,6 +881,8 @@ class PetGamification {
 
   double _max(double a, double b) => a > b ? a : b;
 }
+
+enum _DayKind { uncovered, rough, care }
 
 class _Span {
   const _Span(this.start, this.end);

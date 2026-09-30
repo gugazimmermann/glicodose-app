@@ -10,7 +10,6 @@ import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/glucose_context_logic.dart';
 import 'package:diabetes_app/services/history_stats.dart';
-import 'package:diabetes_app/services/pet_gamification.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
@@ -84,6 +83,9 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
     } catch (_) {
       patterns = const [];
     }
+    final seals = profile == null
+        ? const <String>[]
+        : await widget.services.pets.sealTitles(profile);
     return _ChartsData(
       entries: chronological,
       glucoseSamples: chartSamples,
@@ -92,6 +94,7 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
       totalBasalU: totalBasalU,
       basalCount: basalDoses.length,
       patterns: patterns,
+      seals: seals,
     );
   }
 
@@ -176,7 +179,7 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
                   stats: data.stats,
                   totalBasalU: data.totalBasalU,
                   basalCount: data.basalCount,
-                  seals: _petSeals(data),
+                  seals: data.seals,
                 ),
                 if (data.glucoseSamples.isNotEmpty ||
                     data.entries.isNotEmpty) ...[
@@ -217,6 +220,7 @@ class _ChartsData {
     required this.totalBasalU,
     required this.basalCount,
     required this.patterns,
+    this.seals = const [],
   });
 
   final List<Entry> entries;
@@ -226,6 +230,7 @@ class _ChartsData {
   final double totalBasalU;
   final int basalCount;
   final List<GlucoseContextPattern> patterns;
+  final List<String> seals;
 }
 
 class _ContextPatternsCard extends StatelessWidget {
@@ -259,61 +264,6 @@ class _ContextPatternsCard extends StatelessWidget {
       ),
     );
   }
-}
-
-List<String> _petSeals(_ChartsData data) {
-  final profile = data.profile;
-  if (profile == null || profile.gamificationMode == GamificationMode.off) {
-    return const [];
-  }
-  final nowZoned = AppTime.now();
-  final now = DateTime(
-    nowZoned.year,
-    nowZoned.month,
-    nowZoned.day,
-    nowZoned.hour,
-    nowZoned.minute,
-    nowZoned.second,
-  );
-  DateTime wall(DateTime instant) {
-    final zoned = AppTime.fromUtc(instant);
-    return DateTime(
-      zoned.year,
-      zoned.month,
-      zoned.day,
-      zoned.hour,
-      zoned.minute,
-      zoned.second,
-    );
-  }
-
-  final computation = const PetGamification().compute(
-    glucose: [
-      for (final sample in data.glucoseSamples)
-        PetGlucosePoint(
-          at: wall(sample.recordedAt),
-          glucoseMgdl: sample.glucoseMgdl,
-        ),
-    ],
-    logs: [
-      for (final entry in data.entries)
-        PetCareLog(
-          at: wall(entry.recordedAt),
-          appliedInsulinU: entry.appliedInsulin,
-          carbsG: entry.gptRawResponse?['carboidratos_g'] is num
-              ? (entry.gptRawResponse!['carboidratos_g'] as num).toDouble()
-              : null,
-        ),
-    ],
-    now: now,
-    stored: const PetStoredState(),
-    nightStartMinute: profile.nightStartMinute,
-    nightEndMinute: profile.nightEndMinute,
-    staleMinutes: profile.libreAlertStaleMinutes,
-  );
-  return [
-    for (final item in computation.unlocked) item.titleFor(profile.gamificationMode),
-  ];
 }
 
 class _PeriodChips extends StatelessWidget {

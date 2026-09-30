@@ -113,6 +113,9 @@ class AppServices {
   /// Bumped when the local profile is refreshed (Realtime / resume).
   final ValueNotifier<int> profileRevision = ValueNotifier<int>(0);
 
+  /// Bumped when a fresh sensor reading lands, so the pet can move with it.
+  final ValueNotifier<int> glucoseRevision = ValueNotifier<int>(0);
+
   /// Shell bottom-nav index: 0 Dose, 1 Histórico, 2 Apoiar, 3 Perfil.
   final ValueNotifier<int> selectedTabIndex = ValueNotifier<int>(0);
 
@@ -122,6 +125,10 @@ class AppServices {
 
   void notifyProfileChanged() {
     profileRevision.value++;
+  }
+
+  void notifyGlucoseChanged() {
+    glucoseRevision.value++;
   }
 
   void goToHistoryTab() {

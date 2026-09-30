@@ -460,6 +460,21 @@ class FakeGlicemiaService extends GlicemiaService {
   }
 
   @override
+  Future<List<GlucoseSample>> listCoveringSince(
+    DateTime since, {
+    int pageSize = 1000,
+    int maxRows = 20000,
+  }) async {
+    final sinceUtc = since.toUtc();
+    final matched = _samples
+        .where((sample) => !sample.recordedAt.toUtc().isBefore(sinceUtc))
+        .toList()
+      ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+    return matched.take(maxRows).toList()
+      ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+  }
+
+  @override
   Future<List<GlucoseSample>> listRecent({int limit = 2000}) async {
     final sorted = [..._samples]
       ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
@@ -718,6 +733,9 @@ class FakePetProgressService extends PetProgressService {
 
   @override
   Future<PetSnapshot?> refresh(Profile profile) async => null;
+
+  @override
+  Future<List<String>> sealTitles(Profile profile) async => const [];
 
   @override
   Future<void> equip(Profile profile, String? accessoryId) async {}

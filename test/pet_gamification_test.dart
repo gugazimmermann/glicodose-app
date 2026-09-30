@@ -83,6 +83,26 @@ void main() {
       expect(ids(result), contains('glasses'));
     });
 
+    test('hours since the last save are banked, including a missed day', () {
+      final now = DateTime(2026, 9, 28, 10);
+      final result = engine.compute(
+        glucose: [
+          ...every(DateTime(2026, 9, 27, 8), DateTime(2026, 9, 27, 16)),
+          ...every(DateTime(2026, 9, 28, 8), now),
+        ],
+        logs: const [],
+        now: now,
+        stored: PetStoredState(
+          lifetimeDrops: 4,
+          dropsSavedToday: 4,
+          fuelDay: DateTime(2026, 9, 26),
+        ),
+      );
+
+      expect(result.dropsToday, 2);
+      expect(result.lifetimeDrops, 14);
+    });
+
     test('lifetime drops never shrink when today is recounted lower', () {
       final result = engine.compute(
         glucose: every(DateTime(2026, 9, 28, 8), DateTime(2026, 9, 28, 10)),
@@ -184,6 +204,23 @@ void main() {
       expect(result.careStreakDays, 3);
       expect(result.streakPaused, isFalse);
       expect(ids(result), contains('care_pause'));
+    });
+
+    test('days without readings do not pause or unlock the care badge', () {
+      final points = <PetGlucosePoint>[
+        for (var day = 21; day <= 27; day++)
+          ...every(DateTime(2026, 9, day, 8), DateTime(2026, 9, day, 16)),
+      ];
+      final result = engine.compute(
+        glucose: points,
+        logs: const [],
+        now: DateTime(2026, 9, 28, 9),
+        stored: const PetStoredState(),
+      );
+
+      expect(result.careStreakDays, 7);
+      expect(result.streakPaused, isFalse);
+      expect(ids(result), isNot(contains('care_pause')));
     });
 
     test('night window fully in range unlocks the night guardian', () {

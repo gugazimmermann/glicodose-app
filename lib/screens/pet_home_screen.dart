@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/pet_gamification.dart';
 import 'package:diabetes_app/services/pet_progress_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
@@ -424,6 +425,18 @@ class _FamilySection extends StatelessWidget {
   }
 }
 
+String _familyFuelLine(FamilyPet pet, bool playful) {
+  final now = AppTime.now();
+  final day = pet.fuelDay;
+  final isToday = day != null &&
+      day.year == now.year &&
+      day.month == now.month &&
+      day.day == now.day;
+  final suffix = isToday ? ' hoje' : '';
+  if (playful) return '${pet.dropsToday} gotas$suffix';
+  return '${pet.hoursInRangeToday.toStringAsFixed(1)} h no alvo$suffix';
+}
+
 class _FamilyPetTile extends StatelessWidget {
   const _FamilyPetTile({
     required this.pet,
@@ -462,9 +475,7 @@ class _FamilyPetTile extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: colors.ink, height: 1.3),
               ),
               Text(
-                playful
-                    ? '${pet.dropsToday} gotas hoje'
-                    : '${pet.hoursInRangeToday.toStringAsFixed(1)} h no alvo hoje',
+                _familyFuelLine(pet, playful),
                 style: TextStyle(fontSize: 12, color: colors.muted),
               ),
             ],

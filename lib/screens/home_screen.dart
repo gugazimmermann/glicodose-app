@@ -305,6 +305,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _applyLibreReading(LibreGlucoseReading reading, {bool force = false}) {
+    widget.services.notifyGlucoseChanged();
     if (_sensorDown) {
       setState(() {
         _libreReading = reading;

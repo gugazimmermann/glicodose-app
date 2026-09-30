@@ -28,6 +28,39 @@ class GlicemiaService {
     return _mapRows(rows as List);
   }
 
+  /// Newest-first pages until [since] is covered, so a row cap cannot drop today.
+  Future<List<GlucoseSample>> listCoveringSince(
+    DateTime since, {
+    int pageSize = 1000,
+    int maxRows = 20000,
+  }) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return const [];
+
+    final sinceIso = since.toUtc().toIso8601String();
+    final collected = <GlucoseSample>[];
+    var from = 0;
+    while (collected.length < maxRows) {
+      final rows = await _client
+          .from('glicemias')
+          .select('glucose_mgdl, recorded_at')
+          .eq('user_id', userId)
+          .gte('recorded_at', sinceIso)
+          .order('recorded_at', ascending: false)
+          .range(from, from + pageSize - 1);
+      final page = _mapRows(rows as List);
+      if (page.isEmpty) break;
+      collected.addAll(page);
+      if (page.length < pageSize) break;
+      from += page.length;
+    }
+    if (collected.length > maxRows) {
+      collected.removeRange(maxRows, collected.length);
+    }
+    collected.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+    return collected;
+  }
+
   Future<List<GlucoseSample>> listRecent({int limit = 2000}) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return const [];
