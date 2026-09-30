@@ -14,6 +14,7 @@ create unique index if not exists profiles_share_code_uidx
 create or replace function public.generate_share_code()
 returns text
 language plpgsql
+set search_path = public
 as $$
 declare
   alphabet text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

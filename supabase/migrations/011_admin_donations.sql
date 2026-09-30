@@ -4,6 +4,7 @@ create or replace function public.supporter_monthly_brl(product_id text)
 returns int
 language sql
 immutable
+set search_path = public
 as $$
   select case product_id
     when 'support_10' then 10
