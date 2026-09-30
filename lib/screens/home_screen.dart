@@ -30,8 +30,6 @@ import 'package:diabetes_app/widgets/disclaimer_banner.dart';
 import 'package:diabetes_app/widgets/pet_fuel_card.dart';
 import 'package:diabetes_app/widgets/food_recipe_editor.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
-import 'package:diabetes_app/widgets/support_cta_banner.dart';
-import 'package:diabetes_app/widgets/supporter_feature_notice.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.services, this.embedded = false});
@@ -215,10 +213,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _glucoseController.clear();
     _autoFilledGlucose = null;
     _glucoseWarning = null;
-  }
-
-  void _openSupportTab() {
-    widget.services.selectedTabIndex.value = 2;
   }
 
   Future<void> _loadSupporterFlag() async {
@@ -430,7 +424,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _importFromHealth() async {
-    if (!_isSupporter) return;
+    if (!_isSupporter) {
+      await _openLinkarSensor();
+      return;
+    }
     final health = widget.services.healthPlatform;
     if (!health.isSupportedPlatform) {
       setState(
@@ -572,11 +569,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     }
     final trend = _libreReading?.trend;
-    if (!_sensorDown &&
-        trend != null &&
-        trend <= 2 &&
-        n != null &&
-        n < 120) {
+    if (!_sensorDown && trend != null && trend <= 2 && n != null && n < 120) {
       final trendMsg =
           'Tendência Libre ${_libreReading!.trendLabel}: glicose em queda — risco de hipo se bolus agora.';
       warning = warning == null ? trendMsg : '$warning\n$trendMsg';
@@ -719,11 +712,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         fromAi
             ? 'Opcional. Se preencher, estes gramas substituem a estimativa da IA.'
             : 'Gordura e proteína atrasam a subida. Se preencher, o app sugere uma segunda dose.',
-        style: TextStyle(
-          fontSize: 12,
-          color: colors.muted,
-          height: 1.35,
-        ),
+        style: TextStyle(fontSize: 12, color: colors.muted, height: 1.35),
       ),
       SizedBox(height: 8),
       TextFormField(
@@ -874,7 +863,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           : fromLibre
           ? 'libre'
           : 'manual';
-      final recordedAt = fromHealth ? health.recordedAt : DateTime.now();
+      // Dose time is now. A Health reading can be hours old; using that
+      // timestamp would burn IOB as if the injection had already been given.
+      final recordedAt = DateTime.now();
 
       final entry = await widget.services.entries.saveEntry(
         entryId: entryId,
@@ -969,13 +960,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
           PetFuelCard(services: widget.services),
-          if (!_isSupporter) ...[
-            SupportCtaBanner(
-              visible: !_isSupporter,
-              onTap: () => widget.services.selectedTabIndex.value = 2,
-            ),
-            SizedBox(height: 12),
-          ],
           if (_unconfirmed != null) ...[
             Material(
               color: colors.primarySoft,
@@ -1181,10 +1165,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                if (_supporterReady && !_isSupporter) ...[
-                  SizedBox(height: 10),
-                  SupporterFeatureNotice(onTap: _openSupportTab),
-                ] else if (_supporterReady && _libreConnected) ...[
+                if (_supporterReady && _libreConnected) ...[
                   SizedBox(height: 10),
                   Row(
                     children: [
@@ -1620,9 +1601,7 @@ class _BasalLogSheetState extends State<_BasalLogSheet> {
     super.initState();
     final p = widget.profile;
     final dose = p?.basalDoseU;
-    _unitsController = TextEditingController(
-      text: dose == null ? '' : formatWhole(dose),
-    );
+    _unitsController = TextEditingController(text: formatQuantity(dose));
     _nameController = TextEditingController(text: p?.basalInsulinName ?? '');
     _recordedAt = AppTime.now();
   }

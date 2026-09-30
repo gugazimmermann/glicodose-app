@@ -40,7 +40,14 @@ class BasalReminderLogic {
       minute,
     );
     if (!candidate.isAfter(now)) {
-      candidate = candidate.add(const Duration(days: 1));
+      candidate = tz.TZDateTime(
+        location,
+        now.year,
+        now.month,
+        now.day + 1,
+        hour,
+        minute,
+      );
     }
     return candidate;
   }

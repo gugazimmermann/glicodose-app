@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/app.dart';
+import 'package:diabetes_app/content/clinical_disclaimer.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
@@ -34,6 +35,7 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
       await widget.services.profile.acceptDisclaimer();
       widget.onAccepted();
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -59,7 +61,7 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Este aplicativo não é um dispositivo médico',
+                    ClinicalDisclaimer.title,
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
@@ -67,19 +69,17 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
                     ),
                   ),
                   SizedBox(height: 12),
-                  Text(
-                    'As recomendações de insulina são estimativas baseadas nos '
-                    'fatores que você cadastrou e em informações da refeição. '
-                    'Elas não substituem orientação do seu médico ou equipe de saúde.\n\n'
-                    'Use sempre o julgamento clínico e o plano de tratamento '
-                    'definido com o seu profissional. Em emergência, procure '
-                    'atendimento médico imediatamente.',
-                    style: TextStyle(
-                      color: colors.muted,
-                      height: 1.45,
-                      fontSize: 14,
+                  for (final point in ClinicalDisclaimer.points) ...[
+                    Text(
+                      point,
+                      style: TextStyle(
+                        color: colors.muted,
+                        height: 1.45,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
+                    SizedBox(height: 12),
+                  ],
                 ],
               ),
             ),
@@ -92,7 +92,7 @@ class _DisclaimerScreenState extends State<DisclaimerScreen> {
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
               title: const Text(
-                'Li e entendi que este app não substitui orientação médica.',
+                ClinicalDisclaimer.acceptLabel,
                 style: TextStyle(fontSize: 14, height: 1.35),
               ),
             ),

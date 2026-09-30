@@ -164,7 +164,11 @@ class LibreAlertService {
     if (kIsWeb) return;
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool(prefEnabled) ?? false;
-    if (!enabled || !libreConnected) return;
+    if (!enabled || !libreConnected) {
+      await ensureInitialized();
+      await _plugin.cancel(id: LibreAlertLogic.staleNotificationId);
+      return;
+    }
 
     await ensureInitialized();
     final logic = await _logic();
@@ -219,9 +223,9 @@ class LibreAlertService {
       await _show(stale);
       await prefs.setString(prefStaleAlertAt, now.toUtc().toIso8601String());
       await prefs.setBool(prefSensorDown, true);
-    } else {
+    } else if (!down) {
       await _plugin.cancel(id: LibreAlertLogic.staleNotificationId);
-      if (!down) await prefs.setBool(prefSensorDown, false);
+      await prefs.setBool(prefSensorDown, false);
     }
   }
 

@@ -2,19 +2,20 @@ import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/theme/app_theme.dart';
 
-/// Warning shown when LibreLinkUp and the home widget are locked.
+/// Shown when someone opens Libre, Health, or the home widget without support.
 class SupporterFeatureNotice extends StatelessWidget {
   const SupporterFeatureNotice({super.key, required this.onTap});
 
   static const message =
-      'Ao apoiar o GlicoDose, você pode usar o widget da tela inicial, '
-      'o Health Connect ou o Apple Health e o monitoramento em tempo real '
-      'com o LibreLinkUp.';
+      'O apoio libera o LibreLinkUp em tempo real, o widget da tela inicial '
+      'e o Apple Health ou Health Connect. A calculadora de dose continua '
+      'gratuita.';
 
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -24,36 +25,34 @@ class SupporterFeatureNotice extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: AppColors.warning.withValues(alpha: 0.12),
+            color: colors.primarySoft,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppColors.warning.withValues(alpha: 0.55),
-            ),
+            border: Border.all(color: colors.outline),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Icon(
-                Icons.warning_amber_rounded,
-                color: AppColors.warning,
+                Icons.favorite_outline,
+                color: AppColors.primaryDark,
                 size: 20,
               ),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   message,
                   style: const TextStyle(
-                    color: AppColors.warning,
+                    color: AppColors.primaryDark,
                     fontSize: 13,
                     height: 1.35,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              SizedBox(width: 4),
+              const SizedBox(width: 4),
               Icon(
                 Icons.chevron_right,
-                color: AppColors.warning.withValues(alpha: 0.85),
+                color: AppColors.primaryDark.withValues(alpha: 0.7),
               ),
             ],
           ),

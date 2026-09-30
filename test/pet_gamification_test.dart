@@ -64,10 +64,7 @@ void main() {
     test('stale reading sleeps without clearing saved drops', () {
       final result = engine.compute(
         glucose: [
-          PetGlucosePoint(
-            at: DateTime(2026, 9, 28, 8),
-            glucoseMgdl: 120,
-          ),
+          PetGlucosePoint(at: DateTime(2026, 9, 28, 8), glucoseMgdl: 120),
         ],
         logs: const [],
         now: DateTime(2026, 9, 28, 12),
@@ -118,6 +115,41 @@ void main() {
       expect(result.dropsToday, 2);
       expect(result.lifetimeDrops, 10);
     });
+
+    test('a wide sensor-gap does not count as time in range', () {
+      final result = engine.compute(
+        glucose: [
+          PetGlucosePoint(at: DateTime(2026, 9, 28, 8), glucoseMgdl: 110),
+          PetGlucosePoint(at: DateTime(2026, 9, 28, 10), glucoseMgdl: 110),
+        ],
+        logs: const [],
+        now: DateTime(2026, 9, 28, 10, 5),
+        stored: PetStoredState(),
+        staleMinutes: 120,
+      );
+
+      expect(result.dropsToday, 0);
+      expect(result.mood, PetMood.curious);
+    });
+
+    test('hours after the loaded day stay out of the saved lifetime', () {
+      final result = engine.compute(
+        glucose: [
+          ...every(DateTime(2026, 9, 26, 8), DateTime(2026, 9, 26, 12)),
+          ...every(DateTime(2026, 9, 28, 8), DateTime(2026, 9, 28, 12)),
+        ],
+        logs: const [],
+        now: DateTime(2026, 9, 28, 12),
+        stored: PetStoredState(fuelDay: DateTime(2026, 9, 26)),
+        accountThrough: DateTime(2026, 9, 26),
+      );
+
+      expect(result.dropsToday, 4);
+      expect(result.lifetimeDrops, 4);
+      expect(result.accountedDay, DateTime(2026, 9, 26));
+      expect(result.streakCursor, DateTime(2026, 9, 26));
+      expect(result.careStreakDays, 1);
+    });
   });
 
   group('achievements', () {
@@ -159,12 +191,15 @@ void main() {
         stored: PetStoredState(),
       );
 
-      expect(ids(result), containsAll([
-        'first_log',
-        'breakfast_ritual',
-        'two_meals',
-        'plate_and_pen',
-      ]));
+      expect(
+        ids(result),
+        containsAll([
+          'first_log',
+          'breakfast_ritual',
+          'two_meals',
+          'plate_and_pen',
+        ]),
+      );
     });
 
     test('return from a high earns a badge and a low does not', () {
@@ -224,10 +259,7 @@ void main() {
     });
 
     test('night window fully in range unlocks the night guardian', () {
-      final points = every(
-        DateTime(2026, 9, 27, 20),
-        DateTime(2026, 9, 28, 6),
-      );
+      final points = every(DateTime(2026, 9, 27, 20), DateTime(2026, 9, 28, 6));
       final result = engine.compute(
         glucose: points,
         logs: const [],

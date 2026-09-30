@@ -51,8 +51,7 @@ class _PetFuelCardState extends State<PetFuelCard> {
         applyTheme: false,
       );
       if (!mounted) return;
-      if (profile == null ||
-          profile.gamificationMode == GamificationMode.off) {
+      if (profile == null || profile.gamificationMode == GamificationMode.off) {
         setState(() {
           _snapshot = null;
           _loading = false;
@@ -62,7 +61,7 @@ class _PetFuelCardState extends State<PetFuelCard> {
       final snapshot = await widget.services.pets.refresh(profile);
       if (!mounted) return;
       setState(() {
-        _snapshot = snapshot;
+        if (snapshot != null) _snapshot = snapshot;
         _loading = false;
       });
     } catch (_) {
@@ -135,10 +134,11 @@ class _PetFuelCardState extends State<PetFuelCard> {
                         child: TweenAnimationBuilder<double>(
                           tween: Tween(
                             begin: 0,
-                            end: (computation.dropsToday /
-                                    PetComputation.barDrops)
-                                .clamp(0, 1)
-                                .toDouble(),
+                            end:
+                                (computation.dropsToday /
+                                        PetComputation.barDrops)
+                                    .clamp(0, 1)
+                                    .toDouble(),
                           ),
                           duration: const Duration(milliseconds: 700),
                           curve: Curves.easeOutCubic,

@@ -351,6 +351,7 @@ void main() {
         'timezone': '  Europe/Lisbon  ',
         'theme': 'dark',
         'disclaimer_accepted_at': '2026-01-01T00:00:00.000Z',
+        'disclaimer_version': 2,
         'supporter_expires_at': '2026-12-01T00:00:00.000Z',
         'supporter_updated_at': '2026-06-01T00:00:00.000Z',
         'created_at': '2026-01-01T00:00:00.000Z',
@@ -365,6 +366,12 @@ void main() {
       expect(full.timezone, 'Europe/Lisbon');
       expect(full.theme, 'dark');
       expect(full.hasAcceptedDisclaimer, isTrue);
+      expect(full.disclaimerVersion, 2);
+      final oldText = Profile.fromJson({
+        'id': 'u1',
+        'disclaimer_accepted_at': '2026-01-01T00:00:00.000Z',
+      });
+      expect(oldText.hasAcceptedDisclaimer, isFalse);
       // 2000 out of range and 'x' skipped; keeps first two valid minutes.
       expect(full.basalTimesMinutes, [480, 1320]);
       expect(full.isComplete, isTrue);
@@ -382,6 +389,7 @@ void main() {
 
       final json = full.toJson();
       expect(json['disclaimer_accepted_at'], isNotNull);
+      expect(json['disclaimer_version'], 2);
       expect(json.containsKey('supporter_status'), isFalse);
       expect(json['isf_schedule'], [
         {'start_minute': 0, 'value': 50},
@@ -399,6 +407,7 @@ void main() {
         healthSyncEnabled: true,
       );
       expect(cleared.disclaimerAcceptedAt, isNull);
+      expect(cleared.disclaimerVersion, 0);
       expect(cleared.basalInsulinName, isNull);
       expect(cleared.basalDoseU, isNull);
       expect(cleared.isfMgdlPerU, 40);

@@ -62,10 +62,10 @@ void main() {
 
   group('BasalReminderLogic', () {
     test('normalizeTimes caps at 2 unique sorted minutes', () {
-      expect(
-        BasalReminderLogic.normalizeTimes([1320, 480, 1320, 2000, -1]),
-        [480, 1320],
-      );
+      expect(BasalReminderLogic.normalizeTimes([1320, 480, 1320, 2000, -1]), [
+        480,
+        1320,
+      ]);
     });
 
     test('nextOccurrence rolls to next day when time already passed', () {
@@ -79,6 +79,17 @@ void main() {
       expect(next.day, 22);
       expect(next.hour, 22);
       expect(next.minute, 0);
+    });
+
+    test('nextOccurrence keeps the clock time across a DST spring forward', () {
+      final loc = tz.getLocation('America/New_York');
+      final from = tz.TZDateTime(loc, 2026, 3, 7, 10, 0);
+      final next = BasalReminderLogic.nextOccurrence(
+        minutesFromMidnight: 8 * 60,
+        location: loc,
+        from: from,
+      );
+      expect(next, tz.TZDateTime(loc, 2026, 3, 8, 8, 0));
     });
 
     test('nextOccurrences returns one per slot', () {

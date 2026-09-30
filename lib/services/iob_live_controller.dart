@@ -72,12 +72,12 @@ class IobLiveController {
     if (data is! Map) return;
     final raw = data[IobForegroundTask.dataKeyIobU];
     if (raw is! num) return;
-    final n = asWholeDose(raw);
-    // Recompute full snapshot from cache so contributions stay accurate.
+    // The tick can be a stale 0 from before a dose was saved. Badge and
+    // background refresh follow a fresh cache read, not that message.
     unawaited(() async {
       final snap = await IobCache.recompute();
       snapshot.value = snap;
-      if (n <= 0) {
+      if (asWholeDose(snap.iobU) <= 0) {
         await _badge.applyCount(0);
         await IobBackground.cancel();
       }

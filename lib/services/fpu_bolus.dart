@@ -2,7 +2,6 @@ import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 import 'package:diabetes_app/services/target_resolver.dart';
-import 'package:diabetes_app/utils/dose_format.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 /// Second insulin dose for fat and protein (Warsaw FPU). Does not change the
@@ -70,7 +69,10 @@ class FpuBolus {
       );
     }
 
-    final effective = targetResolver.resolve(profile, now: now);
+    final later = now == null
+        ? null
+        : tz.TZDateTime.from(now.add(Duration(hours: hours)), now.location);
+    final effective = targetResolver.resolve(profile, now: later);
     final icResolved = ratioResolver.resolve(
       profile.icSchedule,
       effective.minuteOfDay,
@@ -78,9 +80,7 @@ class FpuBolus {
     );
     final ic = icResolved?.value ?? profile.icRatio ?? 0;
     final step = profile.doseStep <= 0 ? 1.0 : profile.doseStep;
-    final units = ic <= 0
-        ? 0.0
-        : asWholeDose(_roundToStep(equivalent / ic, step)).toDouble();
+    final units = ic <= 0 ? 0.0 : _roundToStep(equivalent / ic, step);
 
     return FpuPlan(
       fatG: fat,
@@ -130,8 +130,10 @@ class FpuBolus {
   }
 
   double _roundToStep(double value, double step) {
+    if (value.isNaN || value.isInfinite) return 0;
     if (step <= 0) return value < 0 ? 0 : value;
-    final rounded = (value / step).round() * step;
-    return rounded < 0 ? 0 : rounded;
+    final snapped = (value / step).round() * step;
+    final cleaned = (snapped * 1000).round() / 1000;
+    return cleaned < 0 ? 0 : cleaned;
   }
 }

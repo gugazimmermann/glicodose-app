@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:diabetes_app/content/clinical_disclaimer.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 
 class DisclaimerBanner extends StatelessWidget {
@@ -22,8 +23,7 @@ class DisclaimerBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Estimativa com base no seu perfil. '
-              'Não substitui orientação médica.',
+              ClinicalDisclaimer.banner,
               style: TextStyle(
                 color: colors.muted,
                 fontSize: 12,

@@ -2,27 +2,76 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:diabetes_app/config/support_products.dart';
 import 'package:diabetes_app/models/profile.dart';
+import 'package:diabetes_app/utils/support_widget_launch.dart';
 
 void main() {
   group('SupportProducts', () {
-    test('ordered ids cover four monthly tiers', () {
+    test('ordered ids cover monthly tiers and the annual plan', () {
       expect(SupportProducts.orderedIds, [
         'support_10',
         'support_20',
         'support_50',
         'support_100',
+        'support_10_annual',
       ]);
       expect(SupportProducts.fallbackMonthlyBrl.values, [10, 20, 50, 100]);
+      expect(SupportProducts.recommendedId, 'support_10');
+      expect(SupportProducts.trialDays, 7);
     });
 
     test('displayLabel and isKnownProduct', () {
       expect(SupportProducts.displayLabel('support_20'), 'R\$20/mês');
+      expect(SupportProducts.displayLabel('support_10_annual'), 'R\$100/ano');
       expect(SupportProducts.isKnownProduct('support_10'), isTrue);
+      expect(SupportProducts.isKnownProduct('support_10_annual'), isTrue);
+      expect(SupportProducts.isAnnual('support_10_annual'), isTrue);
       expect(SupportProducts.isKnownProduct('other'), isFalse);
+    });
+
+    test('free trial label follows store intro and eligibility', () {
+      expect(
+        SupportProducts.freeTrialLabel(
+          price: 0,
+          periodUnit: 'day',
+          periodNumberOfUnits: 7,
+          cycles: 1,
+          eligible: null,
+        ),
+        '7 dias grátis',
+      );
+      expect(
+        SupportProducts.freeTrialLabel(
+          price: 0,
+          periodUnit: 'day',
+          periodNumberOfUnits: 7,
+          cycles: 1,
+          eligible: false,
+        ),
+        isNull,
+      );
+      expect(
+        SupportProducts.freeTrialLabel(
+          price: 4.9,
+          periodUnit: 'day',
+          periodNumberOfUnits: 7,
+          cycles: 1,
+          eligible: true,
+        ),
+        isNull,
+      );
     });
 
     test('entitlement id matches RevenueCat config', () {
       expect(SupportProducts.entitlementId, 'supporter');
+    });
+
+    test('locked widget launch uri opens support', () {
+      expect(
+        isSupportWidgetLaunch(Uri.parse(supportWidgetLaunchUri)),
+        isTrue,
+      );
+      expect(isSupportWidgetLaunch(Uri.parse('glicodose://syncLibre')), isFalse);
+      expect(isSupportWidgetLaunch(null), isFalse);
     });
   });
 

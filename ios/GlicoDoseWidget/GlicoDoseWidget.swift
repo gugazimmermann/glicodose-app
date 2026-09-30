@@ -141,7 +141,7 @@ struct GlicoDoseWidgetEntryView: View {
   }
 
   private var supportWarning: String {
-    "Ao apoiar o GlicoDose, você pode usar o widget da tela inicial, o Health Connect ou o Apple Health e o monitoramento em tempo real com o LibreLinkUp."
+    "Toque para liberar o widget, o Libre e o Health."
   }
 
   var body: some View {
@@ -156,6 +156,7 @@ struct GlicoDoseWidgetEntryView: View {
           .fixedSize(horizontal: false, vertical: true)
       }
       .padding(4)
+      .widgetURL(URL(string: "glicodose://support?homeWidget"))
     } else {
       unlockedBody
     }

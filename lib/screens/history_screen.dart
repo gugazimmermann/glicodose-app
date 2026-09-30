@@ -85,18 +85,19 @@ class _HistoryScreenState extends State<HistoryScreen>
             tooltip: 'Exportar',
             onSelected: (value) async {
               try {
-                final entries =
-                    await widget.services.entries.listEntries(limit: 500);
-                final basalDoses =
-                    await widget.services.basal.listDoses(limit: 500);
+                final entries = await widget.services.entries.listEntries(
+                  limit: 500,
+                );
+                final basalDoses = await widget.services.basal.listDoses(
+                  limit: 500,
+                );
                 if (value == 'csv') {
                   await widget.services.export.shareCsv(
                     entries,
                     basalDoses: basalDoses,
                   );
                 } else if (value == 'report') {
-                  final profile =
-                      await widget.services.profile.fetchCurrent();
+                  final profile = await widget.services.profile.fetchCurrent();
                   await widget.services.export.sharePdfLikeReport(
                     profile: profile,
                     entries: entries,
@@ -105,9 +106,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                 }
               } catch (e) {
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(userFacingError(e))),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
               }
             },
             itemBuilder: (context) => const [
@@ -176,14 +177,12 @@ class _HistoryListTabState extends State<_HistoryListTab> {
   }
 
   Future<_HistoryListData> _loadPage(int page) async {
-    final entriesPage =
-        await widget.services.entries.listEntriesPage(page: page);
+    final entriesPage = await widget.services.entries.listEntriesPage(
+      page: page,
+    );
     final basals = await widget.services.basal.listDoses(limit: 200);
     final windowBasals = _basalsForPage(entriesPage, basals, page);
-    return _HistoryListData(
-      entriesPage: entriesPage,
-      basalDoses: windowBasals,
-    );
+    return _HistoryListData(entriesPage: entriesPage, basalDoses: windowBasals);
   }
 
   List<BasalDose> _basalsForPage(
@@ -203,8 +202,7 @@ class _HistoryListTabState extends State<_HistoryListTab> {
         : newest;
     return all
         .where(
-          (b) =>
-              !b.recordedAt.isBefore(oldest) && !b.recordedAt.isAfter(upper),
+          (b) => !b.recordedAt.isBefore(oldest) && !b.recordedAt.isAfter(upper),
         )
         .toList();
   }
@@ -271,15 +269,15 @@ class _HistoryListTabState extends State<_HistoryListTab> {
       );
       widget.services.notifyEntriesChanged();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Registro removido')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Registro removido')));
       setState(_reload);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(userFacingError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
     }
   }
 
@@ -295,15 +293,15 @@ class _HistoryListTabState extends State<_HistoryListTab> {
       await widget.services.entries.updateEntry(updated);
       widget.services.notifyEntriesChanged();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Registro atualizado')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Registro atualizado')));
       setState(_reload);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(userFacingError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
     }
   }
 
@@ -331,15 +329,15 @@ class _HistoryListTabState extends State<_HistoryListTab> {
       await widget.services.basal.deleteDose(dose.id);
       widget.services.notifyEntriesChanged();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Basal removida')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Basal removida')));
       setState(_reload);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(userFacingError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
     }
   }
 
@@ -355,15 +353,15 @@ class _HistoryListTabState extends State<_HistoryListTab> {
       await widget.services.basal.updateDose(updated);
       widget.services.notifyEntriesChanged();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Basal atualizada')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Basal atualizada')));
       setState(_reload);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(userFacingError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
     }
   }
 
@@ -579,7 +577,7 @@ class _HistoryListTabState extends State<_HistoryListTab> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  '${formatWhole(dose.units)} U'
+                  '${formatDose(dose.units)} U'
                   '${dose.insulinName != null && dose.insulinName!.trim().isNotEmpty ? ' · ${dose.insulinName}' : ''}',
                   style: TextStyle(
                     fontSize: 16,
@@ -609,10 +607,7 @@ class _HistoryListTabState extends State<_HistoryListTab> {
                 value: 'delete',
                 child: ListTile(
                   dense: true,
-                  leading: Icon(
-                    Icons.delete_outline,
-                    color: AppColors.error,
-                  ),
+                  leading: Icon(Icons.delete_outline, color: AppColors.error),
                   title: Text('Excluir'),
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -628,11 +623,11 @@ class _HistoryListTabState extends State<_HistoryListTab> {
     final food = (entry.foodText?.isNotEmpty == true)
         ? entry.foodText!
         : (entry.foodImagePath != null ? 'Foto anexada' : '—');
-    final differs = entry.recommendedInsulin != null &&
+    final differs =
+        entry.recommendedInsulin != null &&
         entry.appliedInsulin != null &&
         entry.recommendedInsulin != entry.appliedInsulin;
-    final carbs =
-        (entry.gptRawResponse?['carboidratos_g'] as num?)?.toDouble();
+    final carbs = (entry.gptRawResponse?['carboidratos_g'] as num?)?.toDouble();
     final iob = (entry.gptRawResponse?['iob_u'] as num?)?.toDouble();
 
     return Material(
@@ -670,10 +665,7 @@ class _HistoryListTabState extends State<_HistoryListTab> {
                         ),
                         Text(
                           'mg/dL',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: colors.muted,
-                          ),
+                          style: TextStyle(fontSize: 10, color: colors.muted),
                         ),
                       ],
                     ),
@@ -715,12 +707,9 @@ class _HistoryListTabState extends State<_HistoryListTab> {
                             [
                               if (carbs != null)
                                 'Carbs ${formatWhole(carbs)} g',
-                              if (iob != null) 'IOB ${formatWhole(iob)} U',
+                              if (iob != null) 'IOB ${formatDose(iob)} U',
                             ].join(' · '),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colors.muted,
-                            ),
+                            style: TextStyle(fontSize: 12, color: colors.muted),
                           ),
                         ],
                       ],
@@ -847,10 +836,7 @@ class _HistoryListTabState extends State<_HistoryListTab> {
 }
 
 class _HistoryListData {
-  const _HistoryListData({
-    required this.entriesPage,
-    required this.basalDoses,
-  });
+  const _HistoryListData({required this.entriesPage, required this.basalDoses});
 
   final EntriesPage entriesPage;
   final List<BasalDose> basalDoses;
@@ -866,8 +852,7 @@ class _TimelineItem {
 
   bool get isBasal => basal != null;
 
-  DateTime get recordedAt =>
-      basal?.recordedAt ?? entry!.recordedAt;
+  DateTime get recordedAt => basal?.recordedAt ?? entry!.recordedAt;
 }
 
 class _EditEntrySheet extends StatefulWidget {
@@ -891,9 +876,7 @@ class _EditEntrySheetState extends State<_EditEntrySheet> {
     _glucose = TextEditingController(text: '${widget.entry.glucoseMgdl}');
     _food = TextEditingController(text: widget.entry.foodText ?? '');
     _applied = TextEditingController(
-      text: widget.entry.appliedInsulin == null
-          ? ''
-          : formatWhole(widget.entry.appliedInsulin),
+      text: formatQuantity(widget.entry.appliedInsulin),
     );
     _recordedAt = AppTime.fromUtc(widget.entry.recordedAt);
   }
@@ -976,8 +959,9 @@ class _EditEntrySheetState extends State<_EditEntrySheet> {
             onPressed: () {
               final glucose = int.tryParse(_glucose.text.trim());
               final appliedRaw = _applied.text.trim();
-              final applied =
-                  appliedRaw.isEmpty ? null : parseDecimal(appliedRaw);
+              final applied = appliedRaw.isEmpty
+                  ? null
+                  : parseDecimal(appliedRaw);
               if (glucose == null || glucose <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Glicose inválida')),
@@ -1029,32 +1013,24 @@ class _DoseBadge extends StatelessWidget {
     final bg = differs
         ? colors.warningSoft
         : highlight
-            ? AppColors.primary
-            : colors.surface;
+        ? AppColors.primary
+        : colors.surface;
     final fg = differs
         ? AppColors.warning
         : highlight
-            ? Colors.white
-            : colors.ink;
+        ? Colors.white
+        : colors.ink;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
-        border: differs
-            ? Border.all(color: const Color(0xFFFFCC80))
-            : null,
+        border: differs ? Border.all(color: const Color(0xFFFFCC80)) : null,
       ),
       child: Text(
-        pending
-            ? '$label —'
-            : '$label ${value == null ? '—' : formatWhole(value)} U',
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: fg,
-        ),
+        pending ? '$label —' : '$label ${formatDose(value)} U',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }
@@ -1077,7 +1053,7 @@ class _EditBasalSheetState extends State<_EditBasalSheet> {
   @override
   void initState() {
     super.initState();
-    _units = TextEditingController(text: formatWhole(widget.dose.units));
+    _units = TextEditingController(text: formatQuantity(widget.dose.units));
     _name = TextEditingController(text: widget.dose.insulinName ?? '');
     _recordedAt = AppTime.fromUtc(widget.dose.recordedAt);
   }
@@ -1164,9 +1140,9 @@ class _EditBasalSheetState extends State<_EditBasalSheet> {
             onPressed: () {
               final units = parseDecimal(_units.text);
               if (units == null || units <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Dose inválida')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Dose inválida')));
                 return;
               }
               final name = _name.text.trim();

@@ -40,4 +40,17 @@ void main() {
   test('fallback to scalar when empty', () {
     expect(resolver.resolve(const [], 500, fallback: 42)?.value, 42);
   });
+
+  test('twelve bands without midnight keep the last band', () {
+    final raw = [
+      for (var i = 0; i < 12; i++)
+        RatioSegment(startMinute: 60 * (i + 1), value: (i + 1).toDouble()),
+    ];
+    final schedule = resolver.normalize(raw, fallbackValue: 99);
+    expect(schedule, hasLength(12));
+    expect(schedule.first.startMinute, 60);
+    expect(schedule.last.value, 12);
+    expect(resolver.resolve(schedule, 30, fallback: 99)?.value, 99);
+    expect(resolver.validate(schedule, label: 'FSI'), contains('valor base'));
+  });
 }

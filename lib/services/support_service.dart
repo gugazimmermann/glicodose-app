@@ -13,11 +13,19 @@ class SupportPlanOption {
     required this.productId,
     required this.package,
     required this.priceLabel,
+    this.introLabel,
   });
 
   final String productId;
   final Package package;
   final String priceLabel;
+
+  /// Free-trial line from the store intro offer, when the user can still use it.
+  final String? introLabel;
+
+  bool get isAnnual => SupportProducts.isAnnual(productId);
+
+  bool get isRecommended => productId == SupportProducts.recommendedId;
 }
 
 class SupportService {
@@ -66,19 +74,58 @@ class SupportService {
       byId[package.storeProduct.identifier] = package;
     }
 
+    final eligibility = await _introEligibility(byId.keys);
+
     final plans = <SupportPlanOption>[];
     for (final id in SupportProducts.orderedIds) {
       final package = byId[id];
       if (package == null) continue;
+      final product = package.storeProduct;
+      final intro = product.introductoryPrice;
       plans.add(
         SupportPlanOption(
           productId: id,
           package: package,
-          priceLabel: package.storeProduct.priceString,
+          priceLabel: product.priceString,
+          introLabel: intro == null
+              ? null
+              : SupportProducts.freeTrialLabel(
+                  price: intro.price,
+                  periodUnit: intro.periodUnit.name,
+                  periodNumberOfUnits: intro.periodNumberOfUnits,
+                  cycles: intro.cycles,
+                  eligible: eligibility[id],
+                ),
         ),
       );
     }
     return plans;
+  }
+
+  /// iOS reports real eligibility. Android always returns unknown, so we leave
+  /// the map empty and let a free intro price on the product show in the UI.
+  Future<Map<String, bool?>> _introEligibility(Iterable<String> productIds) async {
+    if (kIsWeb || !Platform.isIOS) return const {};
+    final ids = productIds.where(SupportProducts.isKnownProduct).toList();
+    if (ids.isEmpty) return const {};
+    try {
+      final result = await Purchases.checkTrialOrIntroductoryPriceEligibility(
+        ids,
+      );
+      return {
+        for (final id in ids)
+          id: switch (result[id]?.status) {
+            IntroEligibilityStatus.introEligibilityStatusEligible => true,
+            IntroEligibilityStatus.introEligibilityStatusIneligible ||
+            IntroEligibilityStatus.introEligibilityStatusNoIntroOfferExists =>
+              false,
+            _ => null,
+          },
+      };
+    } catch (e) {
+      debugPrint('Intro eligibility: $e');
+      return const {};
+    }
   }
 
   Future<CustomerInfo> purchase(Package package) async {

@@ -165,8 +165,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (profile != null) {
         _nameController.text = profile.fullName ?? '';
         _targetController.text = profile.targetGlucoseMgdl?.toString() ?? '';
-        _targetNightController.text =
-            profile.targetNightMgdl?.toString() ?? '';
+        _targetNightController.text = profile.targetNightMgdl?.toString() ?? '';
         _isfSchedule = _ratioResolver.normalize(
           profile.isfSchedule,
           fallbackValue: profile.isfMgdlPerU,
@@ -189,9 +188,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ? 4
             : profile.insulinDurationHours;
         _basalInsulinController.text = profile.basalInsulinName ?? '';
-        _basalDoseController.text = profile.basalDoseU == null
-            ? ''
-            : formatWhole(profile.basalDoseU);
+        _basalDoseController.text = formatQuantity(profile.basalDoseU);
         _basalTimesMinutes = List<int>.from(profile.basalTimesMinutes);
         _basalReminderEnabled = profile.basalReminderEnabled;
       }
@@ -208,8 +205,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userId = _userId;
     if (userId == null) return;
     try {
-      final current =
-          await widget.services.profile.fetchCurrent(applyTheme: false);
+      final current = await widget.services.profile.fetchCurrent(
+        applyTheme: false,
+      );
       if (current == null) return;
       await widget.services.profile.upsert(current.copyWith(theme: theme));
     } catch (_) {
@@ -250,8 +248,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final basalDoseU = basalDoseRaw.isEmpty
           ? null
           : double.parse(basalDoseRaw.replaceAll(',', '.'));
-      final current =
-          await widget.services.profile.fetchCurrent(applyTheme: false);
+      final current = await widget.services.profile.fetchCurrent(
+        applyTheme: false,
+      );
       final base = current ?? Profile(id: _userId!);
       final profile = base.copyWith(
         fullName: _nameController.text.trim().isEmpty
@@ -290,16 +289,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         insulinName: profile.basalInsulinName,
         doseU: profile.basalDoseU,
       );
+      widget.services.notifyProfileChanged();
+      unawaited(widget.services.iobLive.refreshFromNetwork());
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Perfil salvo')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Perfil salvo')));
       if (widget.onSaved != null) {
         widget.onSaved!();
       } else if (!widget.isOnboarding && !widget.embedded) {
         Navigator.of(context).pop(true);
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -310,9 +312,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     final form = _loading
-        ? Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          )
+        ? Center(child: CircularProgressIndicator(color: AppColors.primary))
         : Form(
             key: _formKey,
             child: ListView(
@@ -391,9 +391,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           decoration: BoxDecoration(
                             color: colors.primarySoft,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: colors.outline,
-                            ),
+                            border: Border.all(color: colors.outline),
                           ),
                           child: Row(
                             children: [
@@ -524,8 +522,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         isExpanded: true,
-                        initialValue: AppTime.curatedLocations
-                                .any((e) => e.id == _timezone)
+                        initialValue:
+                            AppTime.curatedLocations.any(
+                              (e) => e.id == _timezone,
+                            )
                             ? _timezone
                             : AppTime.defaultLocationName,
                         decoration: const InputDecoration(
@@ -641,8 +641,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           return ChoiceChip(
                             label: Text(step == 1 ? '1 U' : '0,5 U'),
                             selected: selected,
-                            onSelected: (_) =>
-                                setState(() => _doseStep = step),
+                            onSelected: (_) => setState(() => _doseStep = step),
                             selectedColor: colors.primarySoft,
                             labelStyle: TextStyle(
                               fontWeight: FontWeight.w600,
@@ -714,9 +713,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           decimal: true,
                         ),
                         inputFormatters: [
-                          FilteringTextInputFormatter.allow(
-                            RegExp(r'[0-9.,]'),
-                          ),
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                         ],
                         decoration: const InputDecoration(
                           labelText: 'Dose padrão (U)',
@@ -750,9 +747,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             InputChip(
                               label: Text(_formatMinute(_basalTimesMinutes[i])),
                               onDeleted: () => setState(() {
-                                _basalTimesMinutes =
-                                    List<int>.from(_basalTimesMinutes)
-                                      ..removeAt(i);
+                                _basalTimesMinutes = List<int>.from(
+                                  _basalTimesMinutes,
+                                )..removeAt(i);
                                 if (_basalTimesMinutes.isEmpty) {
                                   _basalReminderEnabled = false;
                                 }
@@ -775,16 +772,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _basalTimesMinutes.isEmpty
                               ? 'Adicione pelo menos um horário'
                               : 'Notificação local nos horários acima',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colors.muted,
-                          ),
+                          style: TextStyle(fontSize: 12, color: colors.muted),
                         ),
                         value: _basalReminderEnabled,
                         onChanged: _basalTimesMinutes.isEmpty
                             ? null
-                            : (v) =>
-                                setState(() => _basalReminderEnabled = v),
+                            : (v) => setState(() => _basalReminderEnabled = v),
                       ),
                     ],
                   ),
@@ -867,10 +860,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
                 if (_error != null) ...[
                   SizedBox(height: 14),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: AppColors.error),
-                  ),
+                  Text(_error!, style: const TextStyle(color: AppColors.error)),
                 ],
                 SizedBox(height: 20),
                 FilledButton(
@@ -885,9 +875,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         )
                       : Text(
-                          widget.isOnboarding
-                              ? 'Continuar'
-                              : 'Salvar perfil',
+                          widget.isOnboarding ? 'Continuar' : 'Salvar perfil',
                         ),
                 ),
                 if (!widget.isOnboarding) ...[
@@ -955,9 +943,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Perfil'),
-      ),
+      appBar: AppBar(title: const Text('Perfil')),
       body: form,
     );
   }

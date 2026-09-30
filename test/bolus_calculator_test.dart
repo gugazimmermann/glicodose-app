@@ -26,14 +26,8 @@ void main() {
     doseStep: 1,
   );
 
-  tz.TZDateTime at(int hour, int minute) => tz.TZDateTime(
-        location,
-        2026,
-        9,
-        16,
-        hour,
-        minute,
-      );
+  tz.TZDateTime at(int hour, int minute) =>
+      tz.TZDateTime(location, 2026, 9, 16, hour, minute);
 
   test('day target used at 14:00', () {
     final r = calc.calculate(
@@ -152,6 +146,21 @@ void main() {
     expect(r.insulinaRecomendadaU, 1);
   });
 
+  test('half-unit step keeps 0.5 U instead of collapsing to a whole unit', () {
+    final half = profile.copyWith(doseStep: 0.5);
+    final r = calc.calculate(
+      glucoseMgdl: 110,
+      carboidratosG: 15,
+      profile: half,
+      iobU: 0.4,
+      now: at(12, 0),
+    );
+    // 15/10 = 1.5 U food. IOB 0.4 rounds to 0.5 on the same step. 1.5 - 0.5 = 1.
+    expect(r.bolusComidaU, 1.5);
+    expect(r.iobU, 0.5);
+    expect(r.insulinaRecomendadaU, 1);
+  });
+
   test('same UTC instant can flip day/night when timezone changes', () {
     const resolver = TargetResolver();
     // 2026-09-16 23:00 UTC = 20:00 Sao Paulo (night) and 19:00 New York (day
@@ -159,18 +168,12 @@ void main() {
     final utc = DateTime.utc(2026, 9, 16, 23, 0);
 
     AppTime.setLocation('America/Sao_Paulo');
-    final sp = resolver.resolve(
-      profile,
-      now: AppTime.fromUtc(utc),
-    );
+    final sp = resolver.resolve(profile, now: AppTime.fromUtc(utc));
     expect(sp.isNight, isTrue);
     expect(sp.mgdl, 120);
 
     AppTime.setLocation('America/New_York');
-    final ny = resolver.resolve(
-      profile,
-      now: AppTime.fromUtc(utc),
-    );
+    final ny = resolver.resolve(profile, now: AppTime.fromUtc(utc));
     expect(ny.isNight, isFalse);
     expect(ny.mgdl, 110);
 

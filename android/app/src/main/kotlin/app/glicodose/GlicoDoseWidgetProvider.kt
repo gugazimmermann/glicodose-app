@@ -23,7 +23,12 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.glicodose_widget)
 
-            val openApp = HomeWidgetLaunchIntent.getActivity(context, MainActivity::class.java)
+            val unlocked = widgetData.getBoolean("widget_unlocked", false)
+            val openApp = HomeWidgetLaunchIntent.getActivity(
+                context,
+                MainActivity::class.java,
+                if (unlocked) null else Uri.parse("glicodose://support?homeWidget"),
+            )
             views.setOnClickPendingIntent(R.id.widget_root, openApp)
 
             val syncIntent = HomeWidgetBackgroundIntent.getBroadcast(
@@ -52,7 +57,6 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
             views.setTextColor(R.id.widget_title, chrome)
             views.setInt(R.id.widget_sync, "setColorFilter", chrome)
 
-            val unlocked = widgetData.getBoolean("widget_unlocked", false)
             if (!unlocked) {
                 views.setViewVisibility(R.id.widget_sync, View.GONE)
                 views.setViewVisibility(R.id.widget_glucose, View.GONE)
@@ -63,7 +67,7 @@ class GlicoDoseWidgetProvider : HomeWidgetProvider() {
                 views.setViewVisibility(R.id.widget_locked, View.VISIBLE)
                 views.setTextViewText(
                     R.id.widget_locked,
-                    "Ao apoiar o GlicoDose, você pode usar o widget da tela inicial, o Health Connect ou o Apple Health e o monitoramento em tempo real com o LibreLinkUp.",
+                    "Toque para liberar o widget, o Libre e o Health.",
                 )
                 views.setTextColor(
                     R.id.widget_locked,

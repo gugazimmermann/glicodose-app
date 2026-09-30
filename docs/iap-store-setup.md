@@ -13,18 +13,21 @@ e testar antes de produção. O app espera os IDs abaixo.
 
 ## Product IDs (iguais nas duas lojas e no RevenueCat)
 
-| Product ID     | Plano aproximado | Tipo                         |
-| -------------- | ---------------- | ---------------------------- |
-| `support_10`   | R$ 10 / mês      | Auto-renewable subscription  |
-| `support_20`   | R$ 20 / mês      | Auto-renewable subscription  |
-| `support_50`   | R$ 50 / mês      | Auto-renewable subscription  |
-| `support_100`  | R$ 100 / mês     | Auto-renewable subscription  |
+| Product ID         | Plano aproximado | Tipo                         |
+| ------------------ | ---------------- | ---------------------------- |
+| `support_10`       | R$ 10 / mês      | Auto-renewable subscription  |
+| `support_20`       | R$ 20 / mês      | Auto-renewable subscription  |
+| `support_50`       | R$ 50 / mês      | Auto-renewable subscription  |
+| `support_100`      | R$ 100 / mês     | Auto-renewable subscription  |
+| `support_10_annual`| R$ 100 / ano     | Auto-renewable subscription  |
 
-- **Subscription group (Apple):** um único grupo, ex. `Apoio ao projeto`
-- **Entitlement (RevenueCat):** `supporter` (ligado aos 4 produtos)
-- **Offering:** current offering com os 4 packages
+- **Subscription group (Apple):** um único grupo, ex. `Apoio ao projeto` (os cinco produtos juntos, para upgrade/downgrade)
+- **Entitlement (RevenueCat):** `supporter` (ligado aos 5 produtos)
+- **Offering:** current offering com os 5 packages
+- **Trial:** 7 dias grátis só em `support_10` (oferta introdutória). O app mostra “7 dias grátis” quando a loja devolve `introductoryPrice` com preço 0. No iOS some se o usuário já usou o trial.
+- **Anual:** `support_10_annual` a R$ 100 (dez meses de R$ 10 — dois meses a menos). Sem trial.
 
-Copy sugerida nas lojas: “Apoiar o GlicoDose” / “Apoiador” — **não** use a palavra “doação”.
+Copy sugerida nas lojas: “Apoiar o GlicoDose” / “Apoiador” — **não** use a palavra “doação”. Descrição: a calculadora de dose continua gratuita; o apoio libera LibreLinkUp, o widget da tela inicial e Apple Health / Health Connect.
 
 ## 1. App Store Connect
 
@@ -32,16 +35,18 @@ Copy sugerida nas lojas: “Apoiar o GlicoDose” / “Apoiador” — **não** 
 2. Criar o app com Bundle ID **`app.glicodose`** (Apple Developer → Identifiers, se ainda não existir).
 3. App Groups: criar **`group.app.glicodose`** e habilitar no App ID + no extension do widget.
 4. App → Subscriptions → criar o grupo **Apoio ao projeto**.
-5. Criar 4 assinaturas mensais com os Product IDs acima e preços BRL ~10/20/50/100.
-6. Localização PT-BR: nome “Apoio R$X/mês”, descrição explicando que o app continua gratuito e o valor ajuda a manter o serviço (IA/API).
-7. App Store Server Notifications V2 → URL do RevenueCat (dashboard RC → Integrations → Apple).
+5. Criar 4 assinaturas mensais (`support_10` … `support_100`) e a anual `support_10_annual` (~R$ 100).
+6. Em `support_10` → Introductory Offers: **Free**, duração **7 days**, 1 período, para new subscribers.
+7. Localização PT-BR: nome “Apoio R$X/mês” (anual: “Apoio R$100/ano”). Descrição: dose gratuita; o apoio libera LibreLinkUp, widget e Apple Health.
+8. App Store Server Notifications V2 → URL do RevenueCat (dashboard RC → Integrations → Apple).
 
 ## 2. Google Play Console
 
 1. Criar o app com package name **`app.glicodose`** (não dá para mudar depois).
 2. Upload de um AAB (Internal testing) que já inclua o Billing (via `purchases_flutter`).
 3. Monetize with Play → Products → Subscriptions:
-   - Criar assinatura(s) / base plans mensais com Product IDs `support_10` … `support_100` e preços BRL.
+   - Criar assinaturas mensais `support_10` … `support_100` e a anual `support_10_annual` (~R$ 100/ano).
+   - Em `support_10`, base plan mensal com oferta **Free trial** de 7 dias (novos assinantes). A anual não tem trial.
 4. Setup → API access → criar/vincular conta de serviço com permissão financeira → baixar JSON.
 5. Monetize → Monetization setup → Real-time developer notifications:
    - Pub/Sub topic apontando para o RevenueCat (URL/tópico que o RC mostra em Integrations → Google).
@@ -56,9 +61,9 @@ Copy sugerida nas lojas: “Apoiar o GlicoDose” / “Apoiador” — **não** 
 3. **Add app → App Store**
    - Bundle ID: **`app.glicodose`**
    - Shared secret / App Store Connect API key conforme o assistente do RC.
-4. Importar / cadastrar os 4 produtos (`support_10` … `support_100`).
-5. Entitlement `supporter` → anexar os 4 produtos.
-6. Offering default (current) com packages `support_10` … `support_100`.
+4. Importar / cadastrar os 5 produtos (`support_10` … `support_100` e `support_10_annual`).
+5. Entitlement `supporter` → anexar os 5 produtos.
+6. Offering default (current) com os 5 packages. O trial vem da loja; o app não cria a oferta.
 7. Copiar as **public SDK keys** (`appl_…` / `goog_…`) para o `.env` do app.
 8. Webhooks → URL da Edge Function:
 
@@ -72,6 +77,7 @@ Copy sugerida nas lojas: “Apoiar o GlicoDose” / “Apoiador” — **não** 
 
 ```bash
 # SQL Editor: rode supabase/migrations/009_supporter_billing.sql
+# e supabase/migrations/040_support_annual_mrr.sql (MRR do plano anual)
 
 supabase secrets set REVENUECAT_WEBHOOK_AUTH='um-segredo-longo'
 # SUPABASE_SERVICE_ROLE_KEY já existe no ambiente das functions
@@ -92,7 +98,7 @@ REVENUECAT_ANDROID_API_KEY=goog_...
 flutter run --dart-define-from-file=.env
 ```
 
-UI: aba **Apoiar** (somente Android/iOS com keys configuradas). Também acessível pelo atalho no Perfil e pelo banner no topo da Dose.
+UI: aba **Apoiar** (somente Android/iOS com keys configuradas). Lista Libre, widget e Health, destaca `support_10` (“Mais escolhido”, com a linha de trial quando a loja manda) e mostra o anual separado. Também pelo atalho no Perfil. Na Dose, “Linkar Sensor” e “Health” abrem o pedido só quando a pessoa toca. O widget bloqueado abre o app na aba Apoiar.
 
 ## 6. Testes (sandbox)
 
@@ -115,6 +121,9 @@ UI: aba **Apoiar** (somente Android/iOS com keys configuradas). Também acessív
 
 - [ ] Ofertas aparecem com preço da loja (não só fallback)
 - [ ] Compra `support_20` marca entitlement `supporter`
+- [ ] `support_10` novo assinante mostra “7 dias grátis” e a sheet da loja não cobra na hora
+- [ ] Quem já usou o trial no iOS não vê a linha de grátis
+- [ ] `support_10_annual` concede o mesmo entitlement `supporter`
 - [ ] Upgrade `support_20` → `support_50` no mesmo grupo
 - [ ] Cancelamento na loja → status `canceled`/`expired` via webhook
 - [ ] Logout/login + restore recupera o plano
@@ -122,4 +131,4 @@ UI: aba **Apoiar** (somente Android/iOS com keys configuradas). Também acessív
 
 ## Review notes (Apple)
 
-> O app é gratuito. A aba “Apoiar” oferece assinaturas opcionais de apoio ao projeto (manutenção de infraestrutura/IA). Não bloqueia funcionalidades. Benefício: badge de apoiador e continuidade do serviço.
+> A calculadora de dose é gratuita e não exige assinatura. A aba “Apoiar” vende uma assinatura opcional (`support_10` com 7 dias grátis, e outros valores) que libera LibreLinkUp, o widget da tela inicial e a sincronização com Apple Health / Health Connect — funções com custo de servidor. Não use a palavra “doação”.

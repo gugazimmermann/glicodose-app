@@ -39,6 +39,22 @@ void main() {
     expect(plan.carbsG, 11);
   });
 
+  test('a 1 g budget drops foods that round to zero carbohydrate', () {
+    final plan = calc.calculate(
+      glucoseMgdl: 105,
+      profile: profile,
+      now: at(14, 0),
+    );
+    expect(plan.carbsG, 1);
+    final foods = plan.portions.map((portion) => portion.food);
+    expect(foods, isNot(contains('Barra de chocolate ao leite')));
+    expect(foods, isNot(contains('Bala de goma')));
+    expect(plan.portions, isNotEmpty);
+    for (final portion in plan.portions) {
+      expect(portion.carbsG, greaterThan(0));
+    }
+  });
+
   test('1 U of IOB raises the same reading to 21 g', () {
     final plan = calc.calculate(
       glucoseMgdl: 55,
@@ -85,8 +101,9 @@ void main() {
     expect(gel.quantity, contains('¾'));
     expect(gel.note, 'Não tome o sachê inteiro.');
     expect(gel.carbsG, lessThanOrEqualTo(plan.carbsG));
-    final chocolate =
-        plan.portions.firstWhere((p) => p.food.contains('chocolate'));
+    final chocolate = plan.portions.firstWhere(
+      (p) => p.food.contains('chocolate'),
+    );
     expect(chocolate.quantity, '18 g');
     expect(chocolate.carbsG, lessThanOrEqualTo(plan.carbsG));
     expect(chocolate.note, contains('devagar'));

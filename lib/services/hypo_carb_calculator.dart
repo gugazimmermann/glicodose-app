@@ -142,7 +142,7 @@ class HypoCarbCalculator {
       _sugar(carbsG),
       _chocolate(carbsG),
       _gummy(carbsG),
-    ];
+    ].where((portion) => portion.carbsG > 0).toList();
   }
 
   /// Alternatives from the model. A portion above [carbsG] is dropped.

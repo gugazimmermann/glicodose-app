@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:home_widget/home_widget.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/screens/history_screen.dart';
 import 'package:diabetes_app/screens/home_screen.dart';
 import 'package:diabetes_app/screens/profile_screen.dart';
 import 'package:diabetes_app/screens/support_screen.dart';
+import 'package:diabetes_app/utils/support_widget_launch.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 
@@ -20,6 +24,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
   late final List<Widget> _pages;
+  StreamSubscription<Uri?>? _widgetClicks;
 
   static const _titles = ['Dose', 'Histórico', 'Apoiar', 'Perfil'];
 
@@ -28,6 +33,7 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     _index = widget.services.selectedTabIndex.value;
     widget.services.selectedTabIndex.addListener(_onTabRequested);
+    unawaited(_listenForLockedWidget());
     _pages = [
       HomeScreen(
         key: const ValueKey('dose'),
@@ -55,7 +61,27 @@ class _MainShellState extends State<MainShell> {
   @override
   void dispose() {
     widget.services.selectedTabIndex.removeListener(_onTabRequested);
+    final clicks = _widgetClicks;
+    if (clicks != null) unawaited(clicks.cancel());
     super.dispose();
+  }
+
+  /// A tap on the locked widget opens this app on the Apoiar tab.
+  Future<void> _listenForLockedWidget() async {
+    try {
+      final initial = await HomeWidget.initiallyLaunchedFromHomeWidget();
+      _openSupportFromWidget(initial);
+    } catch (_) {}
+    if (!mounted) return;
+    _widgetClicks = HomeWidget.widgetClicked.listen(
+      _openSupportFromWidget,
+      onError: (_) {},
+    );
+  }
+
+  void _openSupportFromWidget(Uri? uri) {
+    if (!isSupportWidgetLaunch(uri)) return;
+    widget.services.selectedTabIndex.value = 2;
   }
 
   void _onTabRequested() {
@@ -78,26 +104,29 @@ class _MainShellState extends State<MainShell> {
   Future<void> _exportHistory(String value) async {
     try {
       final entries = await widget.services.entries.listEntries(limit: 500);
+      final basalDoses = await widget.services.basal.listDoses(limit: 500);
       if (value == 'csv') {
-        await widget.services.export.shareCsv(entries);
+        await widget.services.export.shareCsv(entries, basalDoses: basalDoses);
       } else if (value == 'report') {
         final profile = await widget.services.profile.fetchCurrent();
         await widget.services.export.sharePdfLikeReport(
           profile: profile,
           entries: entries,
+          basalDoses: basalDoses,
         );
       } else if (value == 'pdf') {
         final profile = await widget.services.profile.fetchCurrent();
         await widget.services.export.sharePdfReport(
           profile: profile,
           entries: entries,
+          basalDoses: basalDoses,
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(userFacingError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(e))));
     }
   }
 
@@ -113,22 +142,13 @@ class _MainShellState extends State<MainShell> {
               onSelected: _exportHistory,
               itemBuilder: (context) => const [
                 PopupMenuItem(value: 'csv', child: Text('Exportar CSV')),
-                PopupMenuItem(
-                  value: 'pdf',
-                  child: Text('Exportar PDF'),
-                ),
-                PopupMenuItem(
-                  value: 'report',
-                  child: Text('Relatório texto'),
-                ),
+                PopupMenuItem(value: 'pdf', child: Text('Exportar PDF')),
+                PopupMenuItem(value: 'report', child: Text('Relatório texto')),
               ],
             ),
         ],
       ),
-      body: IndexedStack(
-        index: _index,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: _selectTab,

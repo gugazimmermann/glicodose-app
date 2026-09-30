@@ -7,6 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 
+import 'package:diabetes_app/content/clinical_disclaimer.dart';
 import 'package:diabetes_app/models/basal_dose.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
@@ -27,14 +28,17 @@ class ExportService {
     const resolver = RatioScheduleResolver();
     final bands = resolver.normalize(schedule, fallbackValue: scalarFallback);
     if (bands.isEmpty) {
-      return scalarFallback != null ? '00:00–24:00: $scalarFallback $unit' : '—';
+      return scalarFallback != null
+          ? '00:00–24:00: $scalarFallback $unit'
+          : '—';
     }
     final parts = <String>[];
     for (var i = 0; i < bands.length; i++) {
       final s = bands[i];
       final end = i + 1 < bands.length ? bands[i + 1].startMinute : 1440;
-      final endLabel =
-          end >= 1440 ? '24:00' : RatioScheduleResolver.formatMinute(end);
+      final endLabel = end >= 1440
+          ? '24:00'
+          : RatioScheduleResolver.formatMinute(end);
       parts.add(
         '${RatioScheduleResolver.formatMinute(s.startMinute)}–$endLabel: '
         '${formatWhole(s.value)} $unit',
@@ -116,9 +120,9 @@ class ExportService {
     List<BasalDose> basalDoses = const [],
     HistoryStats? stats,
   }) {
-    final computed = stats ?? HistoryStats.fromEntries(entries, profile: profile);
-    final basalTotal =
-        basalDoses.fold<double>(0, (sum, b) => sum + b.units);
+    final computed =
+        stats ?? HistoryStats.fromEntries(entries, profile: profile);
+    final basalTotal = basalDoses.fold<double>(0, (sum, b) => sum + b.units);
     final buf = StringBuffer();
     buf.writeln('GlicoDose — relatório para consulta');
     buf.writeln('Gerado em: ${AppTime.formatDateTime(AppTime.now())}');
@@ -144,7 +148,7 @@ class ExportService {
       if (profile.basalInsulinName != null || profile.basalDoseU != null) {
         buf.writeln(
           'Basal: ${profile.basalInsulinName ?? '—'} · '
-          'Dose padrão: ${profile.basalDoseU != null ? formatWhole(profile.basalDoseU) : '—'} U',
+          'Dose padrão: ${formatDose(profile.basalDoseU)} U',
         );
       }
       buf.writeln('');
@@ -173,10 +177,10 @@ class ExportService {
       );
     }
     buf.writeln(
-      '  Insulina rápida aplicada: ${formatWhole(computed.totalAppliedU)} U',
+      '  Insulina rápida aplicada: ${formatDose(computed.totalAppliedU)} U',
     );
     buf.writeln(
-      '  Basal aplicada: ${formatWhole(basalTotal)} U '
+      '  Basal aplicada: ${formatDose(basalTotal)} U '
       '(${basalDoses.length} registro${basalDoses.length == 1 ? '' : 's'})',
     );
     buf.writeln('');
@@ -199,8 +203,8 @@ class ExportService {
           }
           b.writeln(
             '  Insulina rec/apl: '
-            '${formatWhole(e.recommendedInsulin ?? 0)} / '
-            '${e.appliedInsulin != null ? formatWhole(e.appliedInsulin!) : '—'} U',
+            '${formatDose(e.recommendedInsulin)} / '
+            '${formatDose(e.appliedInsulin)} U',
           );
           b.writeln('');
         },
@@ -212,7 +216,7 @@ class ExportService {
         write: (b) {
           b.writeln(AppTime.formatDateTime(dose.recordedAt));
           b.writeln(
-            '  [Basal] ${formatWhole(dose.units)} U'
+            '  [Basal] ${formatDose(dose.units)} U'
             '${dose.insulinName != null && dose.insulinName!.trim().isNotEmpty ? ' · ${dose.insulinName}' : ''}',
           );
           if (dose.notes != null && dose.notes!.trim().isNotEmpty) {
@@ -227,9 +231,7 @@ class ExportService {
       item.write(buf);
     }
 
-    buf.writeln(
-      'Ferramenta de apoio — não substitui orientação médica.',
-    );
+    buf.writeln(ClinicalDisclaimer.exportFooter);
     return buf.toString();
   }
 
@@ -287,8 +289,7 @@ class ExportService {
     List<BasalDose> basalDoses = const [],
   }) async {
     final stats = HistoryStats.fromEntries(entries, profile: profile);
-    final basalTotal =
-        basalDoses.fold<double>(0, (sum, b) => sum + b.units);
+    final basalTotal = basalDoses.fold<double>(0, (sum, b) => sum + b.units);
     final theme = await _pdfTheme();
     final doc = pw.Document();
     doc.addPage(
@@ -326,7 +327,7 @@ class ExportService {
             if (profile.basalInsulinName != null || profile.basalDoseU != null)
               pw.Text(
                 'Basal ${profile.basalInsulinName ?? '—'} · '
-                'padrão ${formatWhole(profile.basalDoseU)} U',
+                'padrão ${formatDose(profile.basalDoseU)} U',
               ),
             pw.SizedBox(height: 10),
           ],
@@ -353,11 +354,9 @@ class ExportService {
               'Na meta pessoal (±20%): ${stats.inTargetPercent!.round()}%',
             ),
           pw.Text(
-            'Insulina rápida aplicada: ${formatWhole(stats.totalAppliedU)} U',
+            'Insulina rápida aplicada: ${formatDose(stats.totalAppliedU)} U',
           ),
-          pw.Text(
-            'Basal aplicada: ${formatWhole(basalTotal)} U',
-          ),
+          pw.Text('Basal aplicada: ${formatDose(basalTotal)} U'),
           pw.SizedBox(height: 14),
           pw.Text(
             'Registros',
@@ -367,7 +366,7 @@ class ExportService {
           ..._pdfTimeline(entries, basalDoses),
           pw.SizedBox(height: 16),
           pw.Text(
-            'Ferramenta de apoio — não substitui orientação médica.',
+            ClinicalDisclaimer.exportFooter,
             style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
           ),
         ],
@@ -424,8 +423,8 @@ class ExportService {
               if (carbs != null) pw.Text('Carbs: ${formatWhole(carbs)} g'),
               pw.Text(
                 'Insulina rec/apl: '
-                '${formatWhole(e.recommendedInsulin ?? 0)} / '
-                '${e.appliedInsulin != null ? formatWhole(e.appliedInsulin!) : '—'} U',
+                '${formatDose(e.recommendedInsulin)} / '
+                '${formatDose(e.appliedInsulin)} U',
               ),
             ],
           ),
@@ -445,7 +444,7 @@ class ExportService {
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
               pw.Text(
-                '${formatWhole(b.units)} U'
+                '${formatDose(b.units)} U'
                 '${b.insulinName != null && b.insulinName!.trim().isNotEmpty ? ' · ${b.insulinName}' : ''}',
               ),
             ],

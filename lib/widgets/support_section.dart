@@ -162,10 +162,26 @@ class _SupportSectionState extends State<SupportSection> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'O app é gratuito. Se quiser, você pode apoiar com uma '
-            'assinatura mensal opcional — isso ajuda a manter a '
-            'infraestrutura e a IA. Renovação automática; cancele a '
-            'qualquer momento na loja.',
+            'A calculadora de dose continua gratuita. O apoio libera:',
+            style: TextStyle(fontSize: 13, color: colors.muted, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          const _BenefitRow(
+            icon: Icons.sensors,
+            label: 'LibreLinkUp em tempo real',
+          ),
+          const _BenefitRow(
+            icon: Icons.widgets_outlined,
+            label: 'Widget da tela inicial',
+          ),
+          const _BenefitRow(
+            icon: Icons.monitor_heart_outlined,
+            label: 'Apple Health e Health Connect',
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Essas funções usam servidor. Renovação automática; '
+            'cancele quando quiser na loja.',
             style: TextStyle(fontSize: 13, color: colors.muted, height: 1.4),
           ),
           if (_isSupporter) ...[
@@ -230,23 +246,11 @@ class _SupportSectionState extends State<SupportSection> {
               style: TextStyle(fontSize: 13, color: colors.muted),
             )
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _plans.map((plan) {
-                final selected = _activeProductId == plan.productId;
-                return ChoiceChip(
-                  label: Text(
-                    selected
-                        ? '${plan.priceLabel} · ativo'
-                        : plan.priceLabel,
-                  ),
-                  selected: selected,
-                  onSelected: _busy || selected
-                      ? null
-                      : (_) => _purchase(plan),
-                );
-              }).toList(),
+            _PlanPicker(
+              plans: _plans,
+              activeProductId: _activeProductId,
+              busy: _busy,
+              onPurchase: _purchase,
             ),
           if (_error != null) ...[
             SizedBox(height: 10),
@@ -281,4 +285,161 @@ class _SupportSectionState extends State<SupportSection> {
       ),
     );
   }
+}
+
+class _BenefitRow extends StatelessWidget {
+  const _BenefitRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.primaryDark),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 14, height: 1.3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanPicker extends StatelessWidget {
+  const _PlanPicker({
+    required this.plans,
+    required this.activeProductId,
+    required this.busy,
+    required this.onPurchase,
+  });
+
+  final List<SupportPlanOption> plans;
+  final String? activeProductId;
+  final bool busy;
+  final ValueChanged<SupportPlanOption> onPurchase;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    SupportPlanOption? recommended;
+    SupportPlanOption? firstMonthly;
+    for (final plan in plans) {
+      if (plan.isRecommended) recommended = plan;
+      if (!plan.isAnnual && firstMonthly == null) firstMonthly = plan;
+    }
+    recommended ??= firstMonthly;
+    final annual = plans.where((plan) => plan.isAnnual);
+    final others = plans.where(
+      (plan) => plan != recommended && !plan.isAnnual,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (recommended != null) ...[
+          Text(
+            'Mais escolhido',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primaryDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          _PlanButton(
+            plan: recommended,
+            filled: true,
+            selected: activeProductId == recommended.productId,
+            busy: busy,
+            onPurchase: onPurchase,
+          ),
+        ],
+        for (final plan in annual) ...[
+          const SizedBox(height: 8),
+          _PlanButton(
+            plan: plan,
+            filled: false,
+            selected: activeProductId == plan.productId,
+            busy: busy,
+            onPurchase: onPurchase,
+            caption: 'Plano anual',
+          ),
+        ],
+        if (others.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Outros valores',
+            style: TextStyle(fontSize: 12, color: colors.muted),
+          ),
+          Wrap(
+            spacing: 4,
+            children: [
+              for (final plan in others)
+                TextButton(
+                  onPressed: busy || activeProductId == plan.productId
+                      ? null
+                      : () => onPurchase(plan),
+                  child: Text(_priceLabel(plan, activeProductId)),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _PlanButton extends StatelessWidget {
+  const _PlanButton({
+    required this.plan,
+    required this.filled,
+    required this.selected,
+    required this.busy,
+    required this.onPurchase,
+    this.caption,
+  });
+
+  final SupportPlanOption plan;
+  final bool filled;
+  final bool selected;
+  final bool busy;
+  final ValueChanged<SupportPlanOption> onPurchase;
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final label = _priceLabel(plan, selected ? plan.productId : null);
+    final child = Column(
+      children: [
+        Text(label),
+        if (caption != null)
+          Text(
+            caption!,
+            style: TextStyle(fontSize: 12, color: colors.muted),
+          ),
+      ],
+    );
+    final onPressed = busy || selected ? null : () => onPurchase(plan);
+    if (filled) {
+      return FilledButton(onPressed: onPressed, child: child);
+    }
+    return OutlinedButton(onPressed: onPressed, child: child);
+  }
+}
+
+String _priceLabel(SupportPlanOption plan, String? activeProductId) {
+  final active = activeProductId == plan.productId;
+  if (active) return '${plan.priceLabel} · ativo';
+  final intro = plan.introLabel;
+  if (intro != null) return '$intro, depois ${plan.priceLabel}';
+  return plan.priceLabel;
 }

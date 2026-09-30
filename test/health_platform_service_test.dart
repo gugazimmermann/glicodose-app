@@ -18,10 +18,7 @@ void main() {
 
     test('isOwnSource detects GlicoDose echo', () {
       expect(HealthPlatformService.isOwnSource('GlicoDose'), isTrue);
-      expect(
-        HealthPlatformService.isOwnSource('app.glicodose'),
-        isTrue,
-      );
+      expect(HealthPlatformService.isOwnSource('app.glicodose'), isTrue);
       expect(HealthPlatformService.isOwnSource('LibreLink'), isFalse);
     });
 
@@ -69,40 +66,72 @@ void main() {
       expect(HealthPlatformService.toMgdl(bad), isNull);
     });
 
-    test('writeMealCarbs rejects non-positive carbs; writeInsulin rejects non-positive units',
-        () async {
-      final service = HealthPlatformService();
+    test('toMgdl keeps a real mg/dL low and still scales unlabeled mmol', () {
+      HealthDataPoint point(num v, HealthDataUnit unit) => HealthDataPoint(
+        uuid: 'low',
+        value: NumericHealthValue(numericValue: v),
+        type: HealthDataType.BLOOD_GLUCOSE,
+        unit: unit,
+        dateFrom: DateTime.utc(2026, 1, 1),
+        dateTo: DateTime.utc(2026, 1, 1),
+        sourcePlatform: HealthPlatformType.appleHealth,
+        sourceDeviceId: 'd',
+        sourceId: 's',
+        sourceName: 'Libre',
+      );
+
       expect(
-        await service.writeMealCarbs(
-          carbohydratesG: 0,
-          recordedAt: DateTime.now(),
-          clientRecordId: 'c',
+        HealthPlatformService.toMgdl(
+          point(28, HealthDataUnit.MILLIGRAM_PER_DECILITER),
         ),
-        isFalse,
+        28,
       );
       expect(
-        await service.writeInsulin(
-          units: 0,
-          recordedAt: DateTime.now(),
-          basal: true,
-        ),
-        HealthWriteResult.failed,
+        HealthPlatformService.toMgdl(point(5.5, HealthDataUnit.NO_UNIT)),
+        closeTo(99, 1),
+      );
+      expect(
+        HealthPlatformService.toMgdl(point(100, HealthDataUnit.UNKNOWN_UNIT)),
+        100,
       );
     });
 
+    test(
+      'writeMealCarbs rejects non-positive carbs; writeInsulin rejects non-positive units',
+      () async {
+        final service = HealthPlatformService();
+        expect(
+          await service.writeMealCarbs(
+            carbohydratesG: 0,
+            recordedAt: DateTime.now(),
+            clientRecordId: 'c',
+          ),
+          isFalse,
+        );
+        expect(
+          await service.writeInsulin(
+            units: 0,
+            recordedAt: DateTime.now(),
+            basal: true,
+          ),
+          HealthWriteResult.failed,
+        );
+      },
+    );
+
     test('toMgdl rejects NaN infinite and non-positive', () {
       HealthDataPoint point(num v) => HealthDataPoint(
-            uuid: 'x',
-            value: NumericHealthValue(numericValue: v),
-            type: HealthDataType.BLOOD_GLUCOSE,
-            unit: HealthDataUnit.MILLIGRAM_PER_DECILITER,
-            dateFrom: DateTime.utc(2026, 1, 1),
-            dateTo: DateTime.utc(2026, 1, 1),
-            sourcePlatform: HealthPlatformType.appleHealth,
-            sourceDeviceId: 'd',
-            sourceId: 's',
-            sourceName: 'x',
-          );
+        uuid: 'x',
+        value: NumericHealthValue(numericValue: v),
+        type: HealthDataType.BLOOD_GLUCOSE,
+        unit: HealthDataUnit.MILLIGRAM_PER_DECILITER,
+        dateFrom: DateTime.utc(2026, 1, 1),
+        dateTo: DateTime.utc(2026, 1, 1),
+        sourcePlatform: HealthPlatformType.appleHealth,
+        sourceDeviceId: 'd',
+        sourceId: 's',
+        sourceName: 'x',
+      );
       expect(HealthPlatformService.toMgdl(point(double.nan)), isNull);
       expect(HealthPlatformService.toMgdl(point(double.infinity)), isNull);
       expect(HealthPlatformService.toMgdl(point(0)), isNull);

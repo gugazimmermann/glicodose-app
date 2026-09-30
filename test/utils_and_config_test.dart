@@ -45,6 +45,9 @@ void main() {
       expect(formatQuantity(null), '');
       expect(formatQuantity(14.6), '14,6');
       expect(formatQuantity(15), '15');
+      expect(formatDose(null), '—');
+      expect(formatDose(2.5), '2,5');
+      expect(formatDose(2), '2');
     });
   });
 

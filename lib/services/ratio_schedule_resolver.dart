@@ -1,9 +1,6 @@
 /// One pump-style ratio band: active from [startMinute] until the next segment.
 class RatioSegment {
-  const RatioSegment({
-    required this.startMinute,
-    required this.value,
-  });
+  const RatioSegment({required this.startMinute, required this.value});
 
   /// Minutes from midnight [0, 1439].
   final int startMinute;
@@ -19,9 +16,9 @@ class RatioSegment {
   }
 
   Map<String, dynamic> toJson() => {
-        'start_minute': startMinute,
-        'value': value,
-      };
+    'start_minute': startMinute,
+    'value': value,
+  };
 
   RatioSegment copyWith({int? startMinute, double? value}) {
     return RatioSegment(
@@ -83,14 +80,13 @@ class RatioScheduleResolver {
     if (list.isEmpty && fallbackValue != null && fallbackValue > 0) {
       list = [RatioSegment(startMinute: 0, value: fallbackValue)];
     }
-    if (list.isNotEmpty && list.first.startMinute != 0) {
+    if (list.isNotEmpty &&
+        list.first.startMinute != 0 &&
+        list.length < maxSegments) {
       final midnightValue = fallbackValue != null && fallbackValue > 0
           ? fallbackValue
           : list.first.value;
-      list = [
-        RatioSegment(startMinute: 0, value: midnightValue),
-        ...list,
-      ];
+      list = [RatioSegment(startMinute: 0, value: midnightValue), ...list];
       // Re-dedupe if we somehow duplicated 0
       final seen = <int>{};
       list = [
@@ -127,6 +123,10 @@ class RatioScheduleResolver {
       if (s.startMinute == 0) hasMidnight = true;
     }
     if (!hasMidnight) {
+      if (schedule.length >= maxSegments) {
+        return '$label: a madrugada usa o valor base porque 00:00 não cabe '
+            'nas $maxSegments faixas. Remova uma faixa para incluir 00:00.';
+      }
       return '$label: é obrigatório ter uma faixa começando em 00:00.';
     }
     return null;
@@ -159,6 +159,14 @@ class RatioScheduleResolver {
     }
 
     RatioSegment active = normalized.first;
+    if (active.startMinute > minute && fallback != null && fallback > 0) {
+      return RatioResolveResult(
+        value: fallback,
+        segment: RatioSegment(startMinute: 0, value: fallback),
+        endMinute: active.startMinute,
+        rangeLabel: _rangeLabel(0, active.startMinute),
+      );
+    }
     for (final s in normalized) {
       if (s.startMinute <= minute) {
         active = s;
@@ -168,8 +176,9 @@ class RatioScheduleResolver {
     }
 
     final idx = normalized.indexOf(active);
-    final endMinute =
-        idx + 1 < normalized.length ? normalized[idx + 1].startMinute : 1440;
+    final endMinute = idx + 1 < normalized.length
+        ? normalized[idx + 1].startMinute
+        : 1440;
 
     return RatioResolveResult(
       value: active.value,
@@ -187,7 +196,9 @@ class RatioScheduleResolver {
   }
 
   static String _rangeLabel(int start, int endExclusive) {
-    final endLabel = endExclusive >= 1440 ? '24:00' : formatMinute(endExclusive);
+    final endLabel = endExclusive >= 1440
+        ? '24:00'
+        : formatMinute(endExclusive);
     return '${formatMinute(start)}–$endLabel';
   }
 

@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:diabetes_app/content/clinical_disclaimer.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/libre_alert_service.dart';
@@ -112,6 +113,7 @@ class ProfileService {
 
     final updated = (current ?? Profile(id: userId)).copyWith(
       disclaimerAcceptedAt: DateTime.now().toUtc(),
+      disclaimerVersion: ClinicalDisclaimer.version,
     );
     return upsert(updated);
   }

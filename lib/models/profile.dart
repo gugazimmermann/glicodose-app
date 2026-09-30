@@ -1,3 +1,4 @@
+import 'package:diabetes_app/content/clinical_disclaimer.dart';
 import 'package:diabetes_app/services/pet_gamification.dart';
 import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 
@@ -31,6 +32,7 @@ class Profile {
     this.basalTimesMinutes = const [],
     this.basalReminderEnabled = false,
     this.disclaimerAcceptedAt,
+    this.disclaimerVersion = 0,
     this.shareCode,
     this.supporterProductId,
     this.supporterStatus = 'none',
@@ -90,6 +92,9 @@ class Profile {
   final bool basalReminderEnabled;
   final DateTime? disclaimerAcceptedAt;
 
+  /// Accepted wording. [ClinicalDisclaimer.version] is the current text.
+  final int disclaimerVersion;
+
   /// Unique 6-char code (A-Z0-9) for doctor linking.
   final String? shareCode;
 
@@ -133,7 +138,9 @@ class Profile {
       rapidInsulinName != null &&
       rapidInsulinName!.trim().isNotEmpty;
 
-  bool get hasAcceptedDisclaimer => disclaimerAcceptedAt != null;
+  bool get hasAcceptedDisclaimer =>
+      disclaimerAcceptedAt != null &&
+      disclaimerVersion >= ClinicalDisclaimer.version;
 
   String get diabetesTypeLabel {
     switch (diabetesType) {
@@ -194,6 +201,7 @@ class Profile {
       disclaimerAcceptedAt: json['disclaimer_accepted_at'] != null
           ? DateTime.parse(json['disclaimer_accepted_at'] as String)
           : null,
+      disclaimerVersion: (json['disclaimer_version'] as num?)?.toInt() ?? 0,
       shareCode: json['share_code'] as String?,
       supporterProductId: json['supporter_product_id'] as String?,
       supporterStatus: (json['supporter_status'] as String?) ?? 'none',
@@ -247,6 +255,7 @@ class Profile {
         'disclaimer_accepted_at': disclaimerAcceptedAt!
             .toUtc()
             .toIso8601String(),
+      'disclaimer_version': disclaimerVersion,
       // share_code is server-owned; include only when already known so upsert
       // never inserts a null into the NOT NULL column.
       if (shareCode != null && shareCode!.trim().isNotEmpty)
@@ -283,6 +292,7 @@ class Profile {
     List<int>? basalTimesMinutes,
     bool? basalReminderEnabled,
     DateTime? disclaimerAcceptedAt,
+    int? disclaimerVersion,
     String? shareCode,
     String? supporterProductId,
     String? supporterStatus,
@@ -328,6 +338,9 @@ class Profile {
       disclaimerAcceptedAt: clearDisclaimer
           ? null
           : (disclaimerAcceptedAt ?? this.disclaimerAcceptedAt),
+      disclaimerVersion: clearDisclaimer
+          ? 0
+          : (disclaimerVersion ?? this.disclaimerVersion),
       shareCode: shareCode ?? this.shareCode,
       supporterProductId: supporterProductId ?? this.supporterProductId,
       supporterStatus: supporterStatus ?? this.supporterStatus,

@@ -3,6 +3,7 @@ import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/bolus_calculator.dart';
 import 'package:diabetes_app/services/fpu_bolus.dart';
+import 'package:diabetes_app/services/ratio_schedule_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -142,5 +143,23 @@ void main() {
     expect(fatOnly.gorduraG, 40);
     expect(fatOnly.proteinaG, isNull);
     expect(fatOnly.fpuLaterU, greaterThan(0));
+  });
+
+  test('the later dose uses the I:C active when it will be given', () {
+    final scheduled = profile.copyWith(
+      icSchedule: const [
+        RatioSegment(startMinute: 0, value: 10),
+        RatioSegment(startMinute: 18 * 60, value: 5),
+      ],
+    );
+    final plan = fpu.calculate(
+      fatG: 0,
+      proteinG: 25,
+      profile: scheduled,
+      now: at(15),
+    );
+    // 1 FPU, 10 g, 3 h later is 18:00 with I:C 5 → 2 U. The 15:00 ratio is 10.
+    expect(plan.laterHours, 3);
+    expect(plan.laterInsulinU, 2);
   });
 }

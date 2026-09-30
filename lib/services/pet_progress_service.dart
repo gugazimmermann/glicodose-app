@@ -9,6 +9,7 @@ import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/glicemia_service.dart';
 import 'package:diabetes_app/services/history_stats.dart';
 import 'package:diabetes_app/services/pet_gamification.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 class PetSnapshot {
   const PetSnapshot({
@@ -87,51 +88,75 @@ class PetProgressService {
   Future<PetSnapshot?> refresh(Profile profile) async {
     if (profile.gamificationMode == GamificationMode.off) return null;
     final evaluated = await _evaluate(profile);
+    final computation = evaluated.computation;
+    if (!evaluated.trusted || computation == null) return null;
     var synced = false;
-    if (evaluated.trusted) {
-      synced = await _save(
-        profile: profile,
-        now: evaluated.now,
-        computation: evaluated.computation,
-      );
-      if (evaluated.computation.shouldNotify) {
-        await _notify(profile.gamificationMode, evaluated.computation);
-      }
+    synced = await _save(profile: profile, computation: computation);
+    if (computation.shouldNotify) {
+      await _notify(profile.gamificationMode, computation);
     }
     return PetSnapshot(
       userId: profile.id,
       displayName: profile.fullName,
       mode: profile.gamificationMode,
-      computation: evaluated.computation,
+      computation: computation,
       synced: synced,
     );
   }
 
   /// Same window and saved unlocks as [refresh], without writing progress.
-  Future<List<String>> sealTitles(Profile profile) async {
+  /// Null when the saved progress could not be read, so the UI keeps the
+  /// seals it already showed.
+  Future<List<String>?> sealTitles(Profile profile) async {
     if (profile.gamificationMode == GamificationMode.off) return const [];
     try {
       final evaluated = await _evaluate(profile);
-      if (!evaluated.trusted) return const [];
+      final computation = evaluated.computation;
+      if (!evaluated.trusted || computation == null) return null;
       return [
-        for (final item in evaluated.computation.unlocked)
+        for (final item in computation.unlocked)
           item.titleFor(profile.gamificationMode),
       ];
     } catch (_) {
-      return const [];
+      return null;
     }
   }
 
-  Future<({PetComputation computation, DateTime now, bool trusted})> _evaluate(
+  Future<({PetComputation? computation, DateTime now, bool trusted})> _evaluate(
     Profile profile,
   ) async {
     AppTime.setLocation(profile.timezone);
     final zonedNow = AppTime.now();
     final now = _wall(zonedNow);
-    final since = zonedNow.subtract(const Duration(days: 8));
-    final samples = await glicemias.listCoveringSince(since);
-    final logged = await entries.listEntriesSince(since);
     final loaded = await _loadStored(profile.id);
+    if (loaded.failed) {
+      return (computation: null, now: now, trusted: false);
+    }
+
+    final recentSince = zonedNow.subtract(const Duration(days: 8));
+    DateTime since = recentSince;
+    final fuelStart = _midnightInstant(loaded.stored.fuelDay);
+    final streakStart = _midnightInstant(loaded.stored.streakCursor);
+    if (fuelStart != null && fuelStart.isBefore(since)) since = fuelStart;
+    if (streakStart != null && streakStart.isBefore(since)) since = streakStart;
+
+    const catchUpLimit = 5000;
+    final catchingUp = since.isBefore(
+      recentSince.subtract(const Duration(hours: 1)),
+    );
+    final catchUp = catchingUp
+        ? await glicemias.listSince(since, limit: catchUpLimit)
+        : const <GlucoseSample>[];
+    final recent = await glicemias.listCoveringSince(recentSince);
+    final samples = _mergeSamples(catchUp, recent);
+    final accountThrough = _accountThrough(
+      catchingUp: catchingUp,
+      catchUp: catchUp,
+      catchUpLimit: catchUpLimit,
+      since: since,
+      recentSince: recentSince,
+    );
+    final logged = await entries.listEntriesSince(since);
     final computation = _engine.compute(
       glucose: _glucosePoints(samples, logged),
       logs: [
@@ -147,8 +172,9 @@ class PetProgressService {
       nightStartMinute: profile.nightStartMinute,
       nightEndMinute: profile.nightEndMinute,
       staleMinutes: profile.libreAlertStaleMinutes,
+      accountThrough: accountThrough,
     );
-    return (computation: computation, now: now, trusted: !loaded.failed);
+    return (computation: computation, now: now, trusted: true);
   }
 
   Future<void> equip(Profile profile, String? accessoryId) async {
@@ -180,8 +206,7 @@ class PetProgressService {
         .select('owner_id')
         .eq('viewer_id', userId);
     final ids = [
-      for (final raw in links as List)
-        (raw as Map)['owner_id'] as String,
+      for (final raw in links as List) (raw as Map)['owner_id'] as String,
     ];
     if (ids.isEmpty) return const [];
     final rows = await _client
@@ -258,13 +283,12 @@ class PetProgressService {
 
   Future<bool> _save({
     required Profile profile,
-    required DateTime now,
     required PetComputation computation,
   }) async {
     try {
       await _client.from('pet_progress').upsert({
         'user_id': profile.id,
-        'fuel_drops_today': computation.dropsToday,
+        'fuel_drops_today': computation.dropsOnAccountedDay,
         'hours_in_range_today': computation.hoursInRangeToday,
         'mood': computation.mood.name,
         'playful_line': computation.playfulLine,
@@ -278,8 +302,9 @@ class PetProgressService {
             : _dateOnly(computation.streakCursor!),
         'unlocked_ids': [for (final item in computation.unlocked) item.id],
         'equipped_accessory': computation.equippedAccessoryId,
-        'fuel_day': _dateOnly(now),
-        if (computation.shouldNotify) 'last_notice_on': _dateOnly(now),
+        'fuel_day': _dateOnly(computation.accountedDay),
+        if (computation.shouldNotify)
+          'last_notice_on': _dateOnly(_wall(DateTime.now())),
         'display_name': profile.fullName,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
@@ -289,7 +314,10 @@ class PetProgressService {
     }
   }
 
-  Future<void> _notify(GamificationMode mode, PetComputation computation) async {
+  Future<void> _notify(
+    GamificationMode mode,
+    PetComputation computation,
+  ) async {
     if (kIsWeb || computation.newlyUnlocked.isEmpty) return;
     try {
       const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -299,7 +327,8 @@ class PetProgressService {
       );
       final androidPlugin = _notifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       await androidPlugin?.createNotificationChannel(
         const AndroidNotificationChannel(
           _channelId,
@@ -323,6 +352,51 @@ class PetProgressService {
         ),
       );
     } catch (_) {}
+  }
+
+  DateTime? _midnightInstant(DateTime? wallDate) {
+    if (wallDate == null) return null;
+    return tz.TZDateTime(
+      AppTime.location,
+      wallDate.year,
+      wallDate.month,
+      wallDate.day,
+    );
+  }
+
+  /// Last fully loaded day when the oldest page stopped before the recent window.
+  DateTime? _accountThrough({
+    required bool catchingUp,
+    required List<GlucoseSample> catchUp,
+    required int catchUpLimit,
+    required DateTime since,
+    required DateTime recentSince,
+  }) {
+    if (!catchingUp || catchUp.length < catchUpLimit || catchUp.isEmpty) {
+      return null;
+    }
+    final lastWall = _wall(catchUp.last.recordedAt);
+    if (!lastWall.isBefore(_wall(recentSince))) return null;
+    final partialDay = DateTime(lastWall.year, lastWall.month, lastWall.day);
+    final previous = partialDay.subtract(const Duration(days: 1));
+    final sinceWall = _wall(since);
+    final wantedDay = DateTime(sinceWall.year, sinceWall.month, sinceWall.day);
+    return previous.isBefore(wantedDay) ? partialDay : previous;
+  }
+
+  List<GlucoseSample> _mergeSamples(
+    List<GlucoseSample> older,
+    List<GlucoseSample> newer,
+  ) {
+    final seen = <int>{};
+    final merged = <GlucoseSample>[];
+    for (final sample in [...older, ...newer]) {
+      if (seen.add(sample.recordedAt.toUtc().millisecondsSinceEpoch)) {
+        merged.add(sample);
+      }
+    }
+    merged.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+    return merged;
   }
 
   PetStoredState _storedFromJson(Map<String, dynamic> json) {
@@ -394,9 +468,7 @@ class PetProgressService {
     for (final entry in logged) {
       final at = _wall(entry.recordedAt);
       if (sensorMinutes.contains(_minute(at))) continue;
-      points.add(
-        PetGlucosePoint(at: at, glucoseMgdl: entry.glucoseMgdl),
-      );
+      points.add(PetGlucosePoint(at: at, glucoseMgdl: entry.glucoseMgdl));
     }
     return points;
   }

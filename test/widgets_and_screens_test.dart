@@ -16,8 +16,8 @@ import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
 import 'package:diabetes_app/widgets/disclaimer_banner.dart';
 import 'package:diabetes_app/widgets/section_card.dart';
-import 'package:diabetes_app/widgets/support_cta_banner.dart';
 import 'package:diabetes_app/widgets/support_section.dart';
+import 'package:diabetes_app/widgets/supporter_feature_notice.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -66,7 +66,7 @@ void main() {
 
     testWidgets('DisclaimerBanner shows clinical disclaimer', (tester) async {
       await tester.pumpWidget(wrap(const DisclaimerBanner()));
-      expect(find.textContaining('Não substitui'), findsOneWidget);
+      expect(find.textContaining('dispositivo médico'), findsOneWidget);
     });
 
     testWidgets('AppLogo with title and AppBarLogoTitle', (tester) async {
@@ -86,28 +86,16 @@ void main() {
       expect(find.text('Histórico'), findsOneWidget);
     });
 
-    testWidgets('SupportCtaBanner hides when not configured', (tester) async {
+    testWidgets('SupporterFeatureNotice opens support', (tester) async {
       var tapped = false;
       await tester.pumpWidget(
         wrap(
-          SupportCtaBanner(
-            onTap: () => tapped = true,
-            visible: true,
-          ),
+          SupporterFeatureNotice(onTap: () => tapped = true),
         ),
       );
-      expect(find.byType(SizedBox), findsWidgets);
-      expect(tapped, isFalse);
-
-      await tester.pumpWidget(
-        wrap(
-          SupportCtaBanner(
-            onTap: () => tapped = true,
-            visible: false,
-          ),
-        ),
-      );
-      expect(find.textContaining('apoie'), findsNothing);
+      expect(find.textContaining('LibreLinkUp'), findsOneWidget);
+      await tester.tap(find.byType(SupporterFeatureNotice));
+      expect(tapped, isTrue);
     });
 
     testWidgets('SupportSection shrinks on unsupported platform', (tester) async {

@@ -58,6 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -67,7 +68,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _forgotPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty || !email.contains('@')) {
-      setState(() => _error = 'Informe um e-mail válido para redefinir a senha.');
+      setState(
+        () => _error = 'Informe um e-mail válido para redefinir a senha.',
+      );
       return;
     }
     setState(() {
@@ -85,6 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -100,11 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFD6E8F7),
-              colors.surface,
-              Colors.white,
-            ],
+            colors: [Color(0xFFD6E8F7), colors.surface, Colors.white],
             stops: [0, 0.45, 1],
           ),
         ),
@@ -237,9 +237,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         onPressed: _loading
                             ? null
                             : () => setState(() {
-                                  _isLogin = !_isLogin;
-                                  _error = null;
-                                }),
+                                _isLogin = !_isLogin;
+                                _error = null;
+                              }),
                         child: Text(
                           _isLogin
                               ? 'Não tem conta? Cadastre-se'

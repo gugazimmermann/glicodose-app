@@ -299,7 +299,7 @@ void main() {
       expect(text, contains('GMI'));
       expect(text, contains('[Bolus]'));
       expect(text, contains('[Basal]'));
-      expect(text, contains('orientação médica'));
+      expect(text, contains('Confira a dose antes de aplicar'));
 
       final bare = export.buildTextReport(
         profile: null,

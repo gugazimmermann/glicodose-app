@@ -40,20 +40,19 @@ class BolusCalculator {
     final step = profile.doseStep <= 0 ? 1.0 : profile.doseStep;
 
     final carbs = _grams(carboidratosG);
-    final correcao = asWholeDose(
+    final correcao = _roundToStep(
       isf <= 0 ? 0 : _max0((glucoseMgdl - target) / isf),
-    ).toDouble();
-    final bolusComida = asWholeDose(
-      ic <= 0 ? 0 : _max0(carbs / ic),
-    ).toDouble();
+      step,
+    );
+    final bolusComida = _roundToStep(ic <= 0 ? 0 : _max0(carbs / ic), step);
     final doseBruta = correcao + bolusComida;
-    final iob = asWholeDose(iobU).toDouble();
-    final doseFinal = asWholeDose(_roundToStep(doseBruta - iob, step)).toDouble();
+    final iob = _roundToStep(iobU, step);
+    final doseFinal = _roundToStep(doseBruta - iob, step);
 
     var note = observacao ?? '';
     if (iob > 0 && doseFinal == 0) {
       note = note.isEmpty
-          ? 'IOB de ${formatWhole(iob)} U cobre a dose bruta; recomendação 0 U.'
+          ? 'IOB de ${formatDose(iob)} U cobre a dose bruta; recomendação 0 U.'
           : note;
     }
 
@@ -99,8 +98,10 @@ class BolusCalculator {
   }
 
   double _roundToStep(double value, double step) {
+    if (value.isNaN || value.isInfinite) return 0;
     if (step <= 0) return _max0(value);
-    final rounded = (value / step).round() * step;
-    return _max0(rounded);
+    final snapped = (value / step).round() * step;
+    final cleaned = (snapped * 1000).round() / 1000;
+    return _max0(cleaned);
   }
 }

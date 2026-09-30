@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:diabetes_app/app.dart';
+import 'package:diabetes_app/content/clinical_disclaimer.dart';
 import 'package:diabetes_app/models/basal_dose.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/food_recipe.dart';
@@ -57,6 +58,7 @@ class FakeAppServices {
       doseStep: 1,
       insulinDurationHours: 4,
       disclaimerAcceptedAt: DateTime.utc(2026, 1, 1),
+      disclaimerVersion: ClinicalDisclaimer.version,
       shareCode: 'ABC123',
       supporterStatus: supporterStatus,
       basalInsulinName: 'Tresiba',
@@ -241,6 +243,7 @@ class FakeProfileService extends ProfileService {
     final id = profile?.id ?? FakeAppServices.userId;
     profile = (profile ?? Profile(id: id)).copyWith(
       disclaimerAcceptedAt: DateTime.now().toUtc(),
+      disclaimerVersion: ClinicalDisclaimer.version,
     );
     return profile!;
   }
@@ -466,10 +469,11 @@ class FakeGlicemiaService extends GlicemiaService {
     int maxRows = 20000,
   }) async {
     final sinceUtc = since.toUtc();
-    final matched = _samples
-        .where((sample) => !sample.recordedAt.toUtc().isBefore(sinceUtc))
-        .toList()
-      ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+    final matched =
+        _samples
+            .where((sample) => !sample.recordedAt.toUtc().isBefore(sinceUtc))
+            .toList()
+          ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
     return matched.take(maxRows).toList()
       ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
   }
@@ -726,16 +730,14 @@ class FakeIobLiveController extends IobLiveController {
 }
 
 class FakePetProgressService extends PetProgressService {
-  FakePetProgressService({
-    required super.entries,
-    required super.glicemias,
-  }) : super(Supabase.instance.client);
+  FakePetProgressService({required super.entries, required super.glicemias})
+    : super(Supabase.instance.client);
 
   @override
   Future<PetSnapshot?> refresh(Profile profile) async => null;
 
   @override
-  Future<List<String>> sealTitles(Profile profile) async => const [];
+  Future<List<String>?> sealTitles(Profile profile) async => const [];
 
   @override
   Future<void> equip(Profile profile, String? accessoryId) async {}

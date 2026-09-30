@@ -82,7 +82,7 @@ class DoseReminderService {
     await ensureInitialized();
     AppTime.ensureInitialized();
     final when = AppTime.now().add(Duration(hours: hours));
-    final amount = formatWhole(units);
+    final amount = formatDose(units);
     await _plugin.zonedSchedule(
       id: fpuNotificationId,
       title: 'Segunda parte do bolo',

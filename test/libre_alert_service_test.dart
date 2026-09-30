@@ -18,18 +18,26 @@ void main() {
   const carChannel = MethodChannel(GlicoDoseCarAlerts.channelName);
 
   final carShows = <Map<dynamic, dynamic>>[];
+  final cancelledIds = <int>[];
 
   setUp(() {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     SharedPreferences.setMockInitialValues({});
     carShows.clear();
+    cancelledIds.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           if (call.method == 'initialize') return true;
           if (call.method == 'requestNotificationsPermission') return true;
           if (call.method == 'createNotificationChannel') return null;
           if (call.method == 'show') return null;
-          if (call.method == 'cancel') return null;
+          if (call.method == 'cancel') {
+            final args = call.arguments;
+            if (args is Map && args['id'] is int) {
+              cancelledIds.add(args['id'] as int);
+            }
+            return null;
+          }
           return null;
         });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -128,6 +136,7 @@ void main() {
     );
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(LibreAlertService.prefZone), isNull);
+    expect(cancelledIds, contains(LibreAlertLogic.staleNotificationId));
   });
 
   test('evaluate ok zone cancels hypo/hyper ids path', () async {
@@ -171,54 +180,63 @@ void main() {
     expect(await LibreAlertService.sensorDown(), isTrue);
   });
 
-  test('sensor down stays through the re-alert wait and clears on a fresh reading',
-      () async {
-    SharedPreferences.setMockInitialValues({
-      LibreAlertService.prefEnabled: true,
-      LibreAlertService.prefStaleMinutes: 20,
-      LibreAlertService.prefFailCount: 2,
-      LibreAlertService.prefLastSuccessSyncAt: DateTime.now()
-          .subtract(const Duration(hours: 2))
-          .toUtc()
-          .toIso8601String(),
-    });
-    await LibreAlertService.recordSyncFailure();
-    expect(await LibreAlertService.sensorDown(), isTrue);
+  test(
+    'sensor down stays through the re-alert wait and clears on a fresh reading',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        LibreAlertService.prefEnabled: true,
+        LibreAlertService.prefStaleMinutes: 20,
+        LibreAlertService.prefFailCount: 2,
+        LibreAlertService.prefLastSuccessSyncAt: DateTime.now()
+            .subtract(const Duration(hours: 2))
+            .toUtc()
+            .toIso8601String(),
+      });
+      await LibreAlertService.recordSyncFailure();
+      expect(await LibreAlertService.sensorDown(), isTrue);
 
-    await LibreAlertService.recordSyncFailure();
-    expect(await LibreAlertService.sensorDown(), isTrue);
+      await LibreAlertService.recordSyncFailure();
+      expect(await LibreAlertService.sensorDown(), isTrue);
 
-    final at = DateTime.now();
-    await LibreAlertService.recordSyncSuccess(at: at);
-    await LibreAlertService.evaluate(
-      LibreGlucoseReading(glucoseMgdl: 110, recordedAt: at, trend: 3),
-    );
-    expect(await LibreAlertService.sensorDown(), isFalse);
-  });
+      final at = DateTime.now();
+      await LibreAlertService.recordSyncSuccess(at: at);
+      await LibreAlertService.evaluate(
+        LibreGlucoseReading(glucoseMgdl: 110, recordedAt: at, trend: 3),
+      );
+      expect(await LibreAlertService.sensorDown(), isFalse);
+    },
+  );
 
-  test('old sample does not clear sensor down during the re-alert wait', () async {
-    SharedPreferences.setMockInitialValues({
-      LibreAlertService.prefEnabled: true,
-      LibreAlertService.prefStaleMinutes: 20,
-      LibreAlertService.prefFailCount: 2,
-      LibreAlertService.prefLastSuccessSyncAt: DateTime.now()
-          .subtract(const Duration(hours: 2))
-          .toUtc()
-          .toIso8601String(),
-    });
-    await LibreAlertService.recordSyncFailure();
-    expect(await LibreAlertService.sensorDown(), isTrue);
+  test(
+    'old sample does not clear sensor down during the re-alert wait',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        LibreAlertService.prefEnabled: true,
+        LibreAlertService.prefStaleMinutes: 20,
+        LibreAlertService.prefFailCount: 2,
+        LibreAlertService.prefLastSuccessSyncAt: DateTime.now()
+            .subtract(const Duration(hours: 2))
+            .toUtc()
+            .toIso8601String(),
+      });
+      await LibreAlertService.recordSyncFailure();
+      expect(await LibreAlertService.sensorDown(), isTrue);
 
-    await LibreAlertService.recordSyncSuccess();
-    await LibreAlertService.evaluate(
-      LibreGlucoseReading(
-        glucoseMgdl: 110,
-        recordedAt: DateTime.now().subtract(const Duration(minutes: 40)),
-        trend: 3,
-      ),
-    );
-    expect(await LibreAlertService.sensorDown(), isTrue);
-  });
+      await LibreAlertService.recordSyncSuccess();
+      await LibreAlertService.evaluate(
+        LibreGlucoseReading(
+          glucoseMgdl: 110,
+          recordedAt: DateTime.now().subtract(const Duration(minutes: 40)),
+          trend: 3,
+        ),
+      );
+      expect(await LibreAlertService.sensorDown(), isTrue);
+      expect(
+        cancelledIds,
+        isNot(contains(LibreAlertLogic.staleNotificationId)),
+      );
+    },
+  );
 
   test('showFromPush maps known types', () async {
     await LibreAlertService.showFromPush(

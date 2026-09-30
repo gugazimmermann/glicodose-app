@@ -68,11 +68,7 @@ class PetGlucosePoint {
 
 /// A logged dose or meal. Carb grams reward treatment, never a low itself.
 class PetCareLog {
-  const PetCareLog({
-    required this.at,
-    this.appliedInsulinU,
-    this.carbsG,
-  });
+  const PetCareLog({required this.at, this.appliedInsulinU, this.carbsG});
 
   final DateTime at;
   final double? appliedInsulinU;
@@ -119,6 +115,8 @@ class PetComputation {
     required this.newlyUnlocked,
     required this.equippedAccessoryId,
     required this.shouldNotify,
+    required this.accountedDay,
+    required this.dropsOnAccountedDay,
   });
 
   final PetMood mood;
@@ -135,6 +133,8 @@ class PetComputation {
   final List<PetAchievement> newlyUnlocked;
   final String? equippedAccessoryId;
   final bool shouldNotify;
+  final DateTime accountedDay;
+  final int dropsOnAccountedDay;
 
   static const barDrops = 12;
 }
@@ -234,7 +234,8 @@ class PetGamification {
       id: 'two_meals',
       playfulTitle: 'Duas mesas',
       quietTitle: 'Dois carbos no dia',
-      detail: 'Dois carboidratos no mesmo dia, com pelo menos 3 h de intervalo.',
+      detail:
+          'Dois carboidratos no mesmo dia, com pelo menos 3 h de intervalo.',
     ),
     PetAchievement(
       id: 'plate_and_pen',
@@ -313,10 +314,12 @@ class PetGamification {
     int nightStartMinute = 1200,
     int nightEndMinute = 359,
     int staleMinutes = 20,
+    DateTime? accountThrough,
   }) {
-    final gap = Duration(minutes: staleMinutes < 15 ? 15 : staleMinutes);
+    const gap = Duration(minutes: 20);
     final points = [...glucose]..sort((a, b) => a.at.compareTo(b.at));
     final today = _dateOnly(now);
+    final accountedDay = _accountedDay(today, accountThrough);
     final inRangeRuns = _runs(
       points
           .map(
@@ -339,6 +342,7 @@ class PetGamification {
       stored: stored,
       today: today,
       now: now,
+      lastDay: accountedDay,
       inRangeRuns: inRangeRuns,
     );
 
@@ -367,6 +371,7 @@ class PetGamification {
     final streak = _foldStreak(
       stored: stored,
       today: today,
+      accountThrough: accountedDay,
       inRangeRuns: inRangeRuns,
       anyRuns: anyRuns,
     );
@@ -405,7 +410,23 @@ class PetGamification {
       newlyUnlocked: newly,
       equippedAccessoryId: _equipped(stored.equippedAccessoryId, lifetime),
       shouldNotify: newly.isNotEmpty && noticeDay != today,
+      accountedDay: accountedDay,
+      dropsOnAccountedDay: _dropsOverlapping(
+        inRangeRuns,
+        accountedDay,
+        accountedDay == today ? now : accountedDay.add(const Duration(days: 1)),
+      ),
     );
+  }
+
+  /// Last day whose hours may move saved fuel and the care streak.
+  ///
+  /// [accountThrough] is the last fully loaded day when the fetch stopped
+  /// short of today. Later days stay out of the saved totals.
+  DateTime _accountedDay(DateTime today, DateTime? accountThrough) {
+    if (accountThrough == null) return today;
+    final day = _dateOnly(accountThrough);
+    return day.isAfter(today) ? today : day;
   }
 
   static bool inRange(int mgdl) => mgdl >= lowMgdl && mgdl <= highMgdl;
@@ -420,6 +441,7 @@ class PetGamification {
     required PetStoredState stored,
     required DateTime today,
     required DateTime now,
+    required DateTime lastDay,
     required List<_Span> inRangeRuns,
   }) {
     int dropsOn(DateTime day) {
@@ -428,17 +450,16 @@ class PetGamification {
       return _dropsOverlapping(inRangeRuns, start, end);
     }
 
-    final fuelDay = stored.fuelDay == null
-        ? null
-        : _dateOnly(stored.fuelDay!);
+    final fuelDay = stored.fuelDay == null ? null : _dateOnly(stored.fuelDay!);
     if (fuelDay == null || fuelDay.isAfter(today)) {
       return stored.lifetimeDrops + dropsOn(today);
     }
 
     var extra = 0;
+    final end = lastDay.isBefore(fuelDay) ? fuelDay : lastDay;
     for (
       var day = fuelDay;
-      !day.isAfter(today);
+      !day.isAfter(end);
       day = day.add(const Duration(days: 1))
     ) {
       final drops = dropsOn(day);
@@ -693,6 +714,7 @@ class PetGamification {
   _StreakFold _foldStreak({
     required PetStoredState stored,
     required DateTime today,
+    required DateTime accountThrough,
     required List<_Span> inRangeRuns,
     required List<_Span> anyRuns,
   }) {
@@ -707,9 +729,15 @@ class PetGamification {
     var sawGap = paused;
     var sawCareAfterGap = false;
 
-    for (var day = start;
-        day.isBefore(today);
-        day = day.add(const Duration(days: 1))) {
+    final endExclusive = accountThrough.isBefore(today)
+        ? accountThrough.add(const Duration(days: 1))
+        : today;
+
+    for (
+      var day = start;
+      day.isBefore(endExclusive) && day.isBefore(today);
+      day = day.add(const Duration(days: 1))
+    ) {
       final kind = _dayKind(day, inRangeRuns, anyRuns);
       if (kind == _DayKind.uncovered) continue;
       if (kind == _DayKind.care) {
@@ -871,13 +899,8 @@ class PetGamification {
   DateTime _dateOnly(DateTime value) =>
       DateTime(value.year, value.month, value.day);
 
-  DateTime _atMinute(DateTime day, int minute) => DateTime(
-        day.year,
-        day.month,
-        day.day,
-        minute ~/ 60,
-        minute % 60,
-      );
+  DateTime _atMinute(DateTime day, int minute) =>
+      DateTime(day.year, day.month, day.day, minute ~/ 60, minute % 60);
 
   double _max(double a, double b) => a > b ? a : b;
 }

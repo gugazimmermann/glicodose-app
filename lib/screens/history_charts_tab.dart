@@ -26,6 +26,7 @@ class HistoryChartsTab extends StatefulWidget {
 
 class _HistoryChartsTabState extends State<HistoryChartsTab> {
   HistoryPeriod _period = HistoryPeriod.days30;
+  List<String> _seals = const [];
   late Future<_ChartsData> _future;
 
   @override
@@ -33,11 +34,13 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
     super.initState();
     _future = _load();
     widget.services.entriesRevision.addListener(_onEntriesChanged);
+    widget.services.glucoseRevision.addListener(_onEntriesChanged);
   }
 
   @override
   void dispose() {
     widget.services.entriesRevision.removeListener(_onEntriesChanged);
+    widget.services.glucoseRevision.removeListener(_onEntriesChanged);
     super.dispose();
   }
 
@@ -48,26 +51,33 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
 
   Future<_ChartsData> _load() async {
     final since = _period.since();
-    final entriesFuture = since == null
+    // A minute-level sensor is about 43,000 points in 30 days. Page from the
+    // newest row so the cap cannot drop today.
+    const glucoseCap = 45000;
+    final glucoseSamples = since == null
+        ? await widget.services.glicemias.listRecent(limit: 5000)
+        : await widget.services.glicemias.listCoveringSince(
+            since,
+            maxRows: glucoseCap,
+          );
+    final window =
+        since ??
+        (glucoseSamples.isEmpty ? null : glucoseSamples.first.recordedAt);
+    final entriesFuture = window == null
         ? widget.services.entries.listEntries(limit: 200)
-        : widget.services.entries.listEntriesSince(since);
-    final basalFuture = since == null
+        : widget.services.entries.listEntriesSince(window);
+    final basalFuture = window == null
         ? widget.services.basal.listDoses(limit: 200)
-        : widget.services.basal.listSince(since);
-    final glicemiasFuture = since == null
-        ? widget.services.glicemias.listRecent(limit: 5000)
-        : widget.services.glicemias.listSince(since);
+        : widget.services.basal.listSince(window);
     final profileFuture = widget.services.profile.fetchCurrent();
     final results = await Future.wait([
       entriesFuture,
       basalFuture,
-      glicemiasFuture,
       profileFuture,
     ]);
     final entries = results[0] as List<Entry>;
     final basalDoses = results[1] as List<BasalDose>;
-    final glucoseSamples = results[2] as List<GlucoseSample>;
-    final profile = results[3] as Profile?;
+    final profile = results[2] as Profile?;
     final chronological = [...entries]
       ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
     final chartSamples = HistoryStats.downsample(glucoseSamples);
@@ -83,9 +93,11 @@ class _HistoryChartsTabState extends State<HistoryChartsTab> {
     } catch (_) {
       patterns = const [];
     }
-    final seals = profile == null
+    final loadedSeals = profile == null
         ? const <String>[]
         : await widget.services.pets.sealTitles(profile);
+    final seals = loadedSeals ?? _seals;
+    if (loadedSeals != null) _seals = loadedSeals;
     return _ChartsData(
       entries: chronological,
       glucoseSamples: chartSamples,
@@ -326,7 +338,7 @@ class _StatsSummary extends StatelessWidget {
     String deltaLabel(double? v) {
       if (v == null) return '—';
       final sign = v > 0 ? '+' : '';
-      return '$sign${formatWhole(v)} U';
+      return '$sign${formatDose(v)} U';
     }
 
     return SectionCard(
@@ -378,14 +390,14 @@ class _StatsSummary extends StatelessWidget {
               ),
               _MetricTile(
                 label: 'Insulina rápida',
-                value: fmt1(stats.totalAppliedU, suffix: ' U'),
+                value: '${formatDose(stats.totalAppliedU)} U',
                 hint: stats.avgAppliedU == null
                     ? null
-                    : 'Média ${formatWhole(stats.avgAppliedU)} U',
+                    : 'Média ${formatDose(stats.avgAppliedU)} U',
               ),
               _MetricTile(
                 label: 'Basal aplicada',
-                value: fmt1(totalBasalU, suffix: ' U'),
+                value: '${formatDose(totalBasalU)} U',
                 hint: basalCount == 0
                     ? 'Sem registros de basal'
                     : '$basalCount registro${basalCount == 1 ? '' : 's'}',
@@ -406,7 +418,7 @@ class _StatsSummary extends StatelessWidget {
               ),
               _MetricTile(
                 label: 'Insulina recomendada',
-                value: fmt1(stats.totalRecommendedU, suffix: ' U'),
+                value: '${formatDose(stats.totalRecommendedU)} U',
                 hint:
                     '${stats.recommendedCount} dose${stats.recommendedCount == 1 ? '' : 's'}',
               ),
@@ -506,8 +518,10 @@ class _GlucoseChart extends StatelessWidget {
 
     final values = samples.map((e) => e.glucoseMgdl.toDouble()).toList();
     if (dayTarget != null) values.add(dayTarget!.toDouble());
-    final minY = (values.reduce(math.min) - 20).clamp(40, 400).toDouble();
-    final maxY = (values.reduce(math.max) + 20).clamp(80, 500).toDouble();
+    final spanMin = values.reduce(math.min);
+    final spanMax = values.reduce(math.max);
+    final minY = spanMin - 20;
+    final maxY = math.max(spanMax + 20, minY + 40);
 
     return SectionCard(
       title: 'Glicose',
@@ -758,9 +772,15 @@ class _InsulinChart extends StatelessWidget {
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       final e = withDose[groupIndex];
                       final when = AppTime.formatDateTimeShort(e.recordedAt);
-                      final label = rodIndex == 0 ? 'Rec.' : 'Apl.';
+                      final names = <String>[
+                        if (e.recommendedInsulin != null) 'Rec.',
+                        if (e.appliedInsulin != null) 'Apl.',
+                      ];
+                      final label = rodIndex < names.length
+                          ? names[rodIndex]
+                          : '';
                       return BarTooltipItem(
-                        '$when\n$label ${formatWhole(rod.toY)} U',
+                        '$when\n$label ${formatDose(rod.toY)} U',
                         const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
@@ -774,30 +794,24 @@ class _InsulinChart extends StatelessWidget {
                   final e = withDose[i];
                   final rec = e.recommendedInsulin;
                   final app = e.appliedInsulin;
+                  final width = withDose.length > 20 ? 4.0 : 7.0;
+                  BarChartRodData rod(double value, Color color) {
+                    return BarChartRodData(
+                      toY: value,
+                      color: color,
+                      width: width,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(3),
+                      ),
+                    );
+                  }
+
                   return BarChartGroupData(
                     x: i,
                     barsSpace: 2,
                     barRods: [
-                      BarChartRodData(
-                        toY: rec ?? 0,
-                        color: rec == null
-                            ? AppColors.primary.withValues(alpha: 0.15)
-                            : AppColors.primary,
-                        width: withDose.length > 20 ? 4 : 7,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(3),
-                        ),
-                      ),
-                      BarChartRodData(
-                        toY: app ?? 0,
-                        color: app == null
-                            ? AppColors.accent.withValues(alpha: 0.15)
-                            : AppColors.accent,
-                        width: withDose.length > 20 ? 4 : 7,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(3),
-                        ),
-                      ),
+                      if (rec != null) rod(rec, AppColors.primary),
+                      if (app != null) rod(app, AppColors.accent),
                     ],
                   );
                 }),

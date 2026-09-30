@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/app.dart';
+import 'package:diabetes_app/content/clinical_disclaimer.dart';
 import 'package:diabetes_app/models/entry.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/services/fpu_bolus.dart';
@@ -51,14 +52,12 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
     _entry = widget.entry;
     _rec = widget.recommendation;
     _appliedController = TextEditingController(
-      text: formatWhole(_entry.appliedInsulin ?? _rec.insulinaRecomendadaU),
+      text: formatDose(_entry.appliedInsulin ?? _rec.insulinaRecomendadaU),
     );
     _carbsController = TextEditingController(
       text: formatQuantity(_rec.carboidratosG),
     );
-    _fatController = TextEditingController(
-      text: formatQuantity(_rec.gorduraG),
-    );
+    _fatController = TextEditingController(text: formatQuantity(_rec.gorduraG));
     _proteinController = TextEditingController(
       text: formatQuantity(_rec.proteinaG),
     );
@@ -151,16 +150,17 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
         observacao: 'Recálculo local após ajuste de carboidratos.',
       );
       final updated = await widget.services.entries.updateEntry(
-        _entry
-            .copyWith(recommendedInsulin: next.insulinaRecomendadaU)
-            .copyWithRaw(next.raw),
+        _entry.copyWith(
+          recommendedInsulin: next.insulinaRecomendadaU,
+          gptRawResponse: next.raw ?? _entry.gptRawResponse,
+        ),
       );
       if (!mounted) return;
       setState(() {
         _rec = next;
         _entry = updated;
         if (!_confirmed) {
-          _appliedController.text = formatWhole(next.insulinaRecomendadaU);
+          _appliedController.text = formatDose(next.insulinaRecomendadaU);
         }
       });
       widget.services.notifyEntriesChanged();
@@ -292,7 +292,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     TextSpan(
                       children: [
                         TextSpan(
-                          text: formatWhole(_rec.insulinaRecomendadaU),
+                          text: formatDose(_rec.insulinaRecomendadaU),
                           style: const TextStyle(
                             fontSize: 52,
                             fontWeight: FontWeight.w800,
@@ -388,7 +388,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'IOB descontado: ${formatWhole(_rec.iobU)} U '
+                          'IOB descontado: ${formatDose(_rec.iobU)} U '
                           '(insulina ainda ativa)',
                           style: const TextStyle(
                             fontSize: 14,
@@ -411,12 +411,12 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     SizedBox(width: 8),
                     _MetricChip(
                       label: 'Correção',
-                      value: '${formatWhole(_rec.correcaoU)} U',
+                      value: '${formatDose(_rec.correcaoU)} U',
                     ),
                     SizedBox(width: 8),
                     _MetricChip(
                       label: 'Comida',
-                      value: '${formatWhole(_rec.bolusComidaU)} U',
+                      value: '${formatDose(_rec.bolusComidaU)} U',
                     ),
                   ],
                 ),
@@ -466,7 +466,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     ),
                   SizedBox(height: 4),
                   Text(
-                    'Agora: ${formatWhole(_rec.insulinaRecomendadaU)} U',
+                    'Agora: ${formatDose(_rec.insulinaRecomendadaU)} U',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -475,7 +475,7 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                   ),
                   SizedBox(height: 4),
                   Text(
-                    'Depois: ${formatWhole(_rec.fpuLaterU)} U daqui a ${_rec.fpuLaterHours} h',
+                    'Depois: ${formatDose(_rec.fpuLaterU)} U daqui a ${_rec.fpuLaterHours} h',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -531,7 +531,8 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                     inputFormatters: [decimalInputFormatter],
                     decoration: const InputDecoration(
                       labelText: 'Ajustar carboidratos (g)',
-                      helperText: 'Recalcula a dose e a segunda de gordura, sem IA',
+                      helperText:
+                          'Recalcula a dose e a segunda de gordura, sem IA',
                       prefixIcon: Icon(Icons.restaurant_outlined),
                     ),
                   ),
@@ -588,6 +589,15 @@ class _DoseResultScreenState extends State<DoseResultScreen> {
                   ),
                 ),
                 SizedBox(height: 14),
+                Text(
+                  ClinicalDisclaimer.confirmHint,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: colors.muted,
+                  ),
+                ),
+                SizedBox(height: 10),
                 FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primaryDark,
@@ -689,23 +699,6 @@ class _MetricChip extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-extension on Entry {
-  Entry copyWithRaw(Map<String, dynamic>? raw) {
-    return Entry(
-      id: id,
-      userId: userId,
-      recordedAt: recordedAt,
-      glucoseMgdl: glucoseMgdl,
-      foodText: foodText,
-      foodImagePath: foodImagePath,
-      recommendedInsulin: recommendedInsulin,
-      appliedInsulin: appliedInsulin,
-      gptRawResponse: raw ?? gptRawResponse,
-      createdAt: createdAt,
     );
   }
 }

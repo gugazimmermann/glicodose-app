@@ -251,16 +251,20 @@ class HealthPlatformService {
     return appSourceHints.any(lower.contains);
   }
 
-  /// Convert to mg/dL. Health package declares BLOOD_GLUCOSE as mg/dL;
-  /// some sources still store mmol/L (~3–30).
+  /// Convert to mg/dL. Explicit mg/dL is kept, including real lows under 35.
+  /// mmol/L is scaled. A missing unit still uses the ~3–30 mmol heuristic.
   static int? toMgdl(HealthDataPoint point) {
     final value = point.value;
     if (value is! NumericHealthValue) return null;
     final raw = value.numericValue.toDouble();
     if (raw.isNaN || raw.isInfinite || raw <= 0) return null;
-    final asMgdl = point.unit == HealthDataUnit.MILLIMOLES_PER_LITER || raw < 35
-        ? raw * 18.0182
-        : raw;
+    final unitMissing =
+        point.unit == HealthDataUnit.UNKNOWN_UNIT ||
+        point.unit == HealthDataUnit.NO_UNIT;
+    final asMmol =
+        point.unit == HealthDataUnit.MILLIMOLES_PER_LITER ||
+        (unitMissing && raw < 35);
+    final asMgdl = asMmol ? raw * 18.0182 : raw;
     final rounded = asMgdl.round();
     if (rounded < 20 || rounded > 600) return null;
     return rounded;
