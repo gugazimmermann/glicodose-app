@@ -135,7 +135,8 @@
         </intent>
         <package android:name="com.google.android.apps.healthdata" />
         <intent>
-            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 </manifest>

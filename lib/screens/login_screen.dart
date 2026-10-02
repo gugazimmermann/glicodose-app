@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:diabetes_app/app.dart';
+import 'package:diabetes_app/content/privacy_policy.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
 import 'package:diabetes_app/utils/user_facing_error.dart';
 import 'package:diabetes_app/widgets/app_logo.dart';
@@ -245,6 +246,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? 'Não tem conta? Cadastre-se'
                               : 'Já tem conta? Entrar',
                         ),
+                      ),
+                      TextButton(
+                        onPressed: _loading ? null : openPrivacyPolicy,
+                        child: const Text('Política de privacidade'),
                       ),
                     ],
                   ),

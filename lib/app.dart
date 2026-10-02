@@ -16,6 +16,7 @@ import 'package:diabetes_app/services/basal_service.dart';
 import 'package:diabetes_app/services/dose_reminder_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/export_service.dart';
+import 'package:diabetes_app/services/food_photo_service.dart';
 import 'package:diabetes_app/services/food_recipe_service.dart';
 import 'package:diabetes_app/services/glicemia_service.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
@@ -48,12 +49,9 @@ class AppServices {
       insulin: InsulinService(client),
       recipes: FoodRecipeService(client),
       speech: SpeechService(client),
+      foodPhotos: FoodPhotoService(client),
       libre: LibreLinkUpService(client),
-      pets: PetProgressService(
-        client,
-        entries: entries,
-        glicemias: glicemias,
-      ),
+      pets: PetProgressService(client, entries: entries, glicemias: glicemias),
       support: SupportService(),
       export: const ExportService(),
       reminders: DoseReminderService(),
@@ -78,6 +76,7 @@ class AppServices {
     required this.insulin,
     required this.recipes,
     required this.speech,
+    required this.foodPhotos,
     required this.libre,
     required this.pets,
     required this.support,
@@ -97,6 +96,7 @@ class AppServices {
   final InsulinService insulin;
   final FoodRecipeService recipes;
   final SpeechService speech;
+  final FoodPhotoService foodPhotos;
   final LibreLinkUpService libre;
   final PetProgressService pets;
   final SupportService support;

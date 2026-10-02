@@ -14,6 +14,7 @@ import 'package:diabetes_app/services/basal_service.dart';
 import 'package:diabetes_app/services/dose_reminder_service.dart';
 import 'package:diabetes_app/services/entry_service.dart';
 import 'package:diabetes_app/services/export_service.dart';
+import 'package:diabetes_app/services/food_photo_service.dart';
 import 'package:diabetes_app/services/food_recipe_service.dart';
 import 'package:diabetes_app/services/glicemia_service.dart';
 import 'package:diabetes_app/services/glucose_context_logic.dart';
@@ -89,6 +90,7 @@ class FakeAppServices {
     final insulin = InsulinService(client);
     final recipes = FakeFoodRecipeService(client);
     final speech = FakeSpeechService(client);
+    final foodPhotos = FakeFoodPhotoService(client);
     final libre = FakeLibreLinkUpService(
       client,
       statusValue: libreStatus ?? LibreConnectionStatus.disconnected,
@@ -110,6 +112,7 @@ class FakeAppServices {
       insulin: insulin,
       recipes: recipes,
       speech: speech,
+      foodPhotos: foodPhotos,
       libre: libre,
       pets: FakePetProgressService(entries: e, glicemias: g),
       support: support,
@@ -550,6 +553,16 @@ class FakeLibreLinkUpService extends LibreLinkUpService {
   Future<void> disconnect() async {
     _status = LibreConnectionStatus.disconnected;
   }
+}
+
+class FakeFoodPhotoService extends FoodPhotoService {
+  FakeFoodPhotoService(super.client);
+
+  @override
+  Future<String> describe(
+    Uint8List bytes, {
+    String mimeType = 'image/jpeg',
+  }) async => 'prato de arroz com feijão';
 }
 
 class FakeSpeechService extends SpeechService {

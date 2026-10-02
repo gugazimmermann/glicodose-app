@@ -14,6 +14,7 @@ import 'package:diabetes_app/screens/dose_result_screen.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/dose_factor.dart';
+import 'package:diabetes_app/services/food_photo_service.dart';
 import 'package:diabetes_app/services/fpu_bolus.dart';
 import 'package:diabetes_app/services/health_platform_service.dart';
 import 'package:diabetes_app/services/hypo_carb_calculator.dart';
@@ -52,6 +53,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Uint8List? _photoBytes;
   String? _photoName;
+  bool _describingPhoto = false;
+  int _photoDescribeGeneration = 0;
   bool _useAi = true;
   bool _calculating = false;
   bool _listening = false;
@@ -486,12 +489,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _applySpeechWords(String words) {
+  void _applyFoodWords(String words) {
     if (!mounted) return;
-    final spoken = words.trim();
-    if (spoken.isEmpty) return;
-    final base = _foodController.text.trim();
-    final text = base.isEmpty ? spoken : '$base $spoken';
+    final text = mergeFoodText(_foodController.text, words);
+    if (text == _foodController.text) return;
     _foodController.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
@@ -511,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       try {
         final text = await widget.services.speech.stopAndTranscribe();
         if (!mounted) return;
-        _applySpeechWords(text);
+        _applyFoodWords(text);
         setState(() => _transcribing = false);
       } catch (e) {
         _reportSpeechIssue(userFacingError(e));
@@ -658,27 +659,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return ok == true;
   }
 
+  void _dropPhoto() {
+    _photoDescribeGeneration++;
+    setState(() {
+      _photoBytes = null;
+      _photoName = null;
+      _describingPhoto = false;
+    });
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final file = await _picker.pickImage(
       source: source,
       imageQuality: 75,
       maxWidth: 1600,
     );
-    if (file == null) return;
+    if (file == null || !mounted) return;
     final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    final generation = ++_photoDescribeGeneration;
     setState(() {
       _photoBytes = bytes;
       _photoName = file.name;
+      _describingPhoto = true;
+      _error = null;
     });
+    try {
+      final text = await widget.services.foodPhotos.describe(
+        bytes,
+        mimeType: foodPhotoMimeType(file.name),
+      );
+      if (!mounted || generation != _photoDescribeGeneration) return;
+      _applyFoodWords(text);
+      setState(() => _describingPhoto = false);
+    } catch (e) {
+      if (!mounted || generation != _photoDescribeGeneration) return;
+      setState(() {
+        _describingPhoto = false;
+        _error = userFacingError(e);
+      });
+    }
   }
 
   void _clearForm() {
+    _photoDescribeGeneration++;
     _foodController.clear();
     _carbsController.clear();
     _fatController.clear();
     _proteinController.clear();
     _photoBytes = null;
     _photoName = null;
+    _describingPhoto = false;
     _error = null;
     _glucoseWarning = null;
     _glucoseManuallyEdited = false;
@@ -1461,12 +1492,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   minWidth: 48,
                                   minHeight: 48,
                                 ),
-                                onPressed: () {
-                                  setState(() {
-                                    _photoBytes = null;
-                                    _photoName = null;
-                                  });
-                                },
+                                onPressed: _dropPhoto,
                                 icon: const Icon(
                                   Icons.close,
                                   color: Colors.white,
@@ -1478,7 +1504,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ],
                       ),
                     ),
-                    if (_photoName != null)
+                    if (_describingPhoto)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Descrevendo a foto…',
+                          style: TextStyle(fontSize: 12, color: colors.muted),
+                        ),
+                      )
+                    else if (_photoName != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(

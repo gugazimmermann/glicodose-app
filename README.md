@@ -55,6 +55,7 @@ supabase secrets set LIBRELINKUP_CRON_SECRET='um-segredo-longo'
 supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat service-account.json)"
 supabase functions deploy recommend-insulin
 supabase functions deploy transcribe-food
+supabase functions deploy describe-food
 supabase functions deploy revenuecat-webhook
 supabase functions deploy librelinkup-connect
 supabase functions deploy librelinkup-sync
@@ -65,6 +66,7 @@ supabase functions deploy librelinkup-cron
 | --- | --- |
 | `recommend-insulin` | Carbs (GPT-4o + TACO / Vision) + confiança; dose = fórmula do perfil (`dose_step`) − IOB; log em `ai_usage_logs` |
 | `transcribe-food` | Áudio → texto (Whisper, `language: pt`) |
+| `describe-food` | Foto da refeição → frase em português (GPT-4o mini); log em `ai_usage_logs` |
 | `revenuecat-webhook` | Espelha status de apoiador (IAP) em `profiles` |
 | `librelinkup-connect` / `sync` | Credenciais e sync sob demanda do LibreLinkUp |
 | `librelinkup-cron` | Sync periódico + push FCM de alertas hipo/hiper/stale |
@@ -194,7 +196,7 @@ lib/
   screens/         # Dose, Histórico, Perfil, Health import, Linkar Sensor, Apoiar…
 supabase/
   migrations/      # 001 … 019
-  functions/       # recommend-insulin, transcribe-food, revenuecat-webhook, librelinkup-*
+  functions/       # recommend-insulin, transcribe-food, describe-food, revenuecat-webhook, librelinkup-*
 docs/
   iap-store-setup.md
   releases/

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:diabetes_app/app.dart';
+import 'package:diabetes_app/content/privacy_policy.dart';
 import 'package:diabetes_app/models/profile.dart';
 import 'package:diabetes_app/screens/health_import_screen.dart';
 import 'package:diabetes_app/services/app_time.dart';
@@ -908,6 +909,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       foregroundColor: AppColors.accent,
                       side: const BorderSide(color: AppColors.accent),
                     ),
+                  ),
+                  SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : openPrivacyPolicy,
+                    icon: const Icon(Icons.privacy_tip_outlined),
+                    label: const Text('Política de privacidade'),
                   ),
                   SizedBox(height: 12),
                   OutlinedButton.icon(

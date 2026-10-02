@@ -3,6 +3,11 @@
 Checklist operacional para criar os produtos nas lojas, configurar o RevenueCat
 e testar antes de produção. O app espera os IDs abaixo.
 
+No Android, conta pessoal criada depois de 13 de novembro de 2023 ainda passa
+pelo teste fechado (12 testadores por 14 dias) antes da produção:
+[play-closed-test.md](play-closed-test.md). Política para colar na ficha:
+[play-privacy-policy.md](play-privacy-policy.md).
+
 ## Identificadores do app
 
 | Plataforma | ID |
@@ -51,6 +56,7 @@ Copy sugerida nas lojas: “Apoiar o GlicoDose” / “Apoiador” — **não** 
 5. Monetize → Monetization setup → Real-time developer notifications:
    - Pub/Sub topic apontando para o RevenueCat (URL/tópico que o RC mostra em Integrations → Google).
 6. License testing: adicionar Gmails de teste antes de cobrar de verdade.
+7. Faixa interna valida o Billing. A contagem de 12 testadores por 14 dias é na faixa fechada: [play-closed-test.md](play-closed-test.md). URL da política: [play-privacy-policy.md](play-privacy-policy.md).
 
 ## 3. RevenueCat
 
