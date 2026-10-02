@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -24,6 +26,7 @@ Future<void> main() async {
   AppTime.ensureInitialized();
   await ThemePreferenceService.load();
   _installErrorHandlers();
+  _enableAndroidPhotoPicker();
 
   if (!kIsWeb) {
     IobForegroundTask.init();
@@ -66,6 +69,15 @@ Future<void> main() async {
   }
 
   runApp(DiabetesApp(services: services));
+}
+
+/// Prefer the system Photo Picker so gallery access needs no READ_MEDIA_*.
+void _enableAndroidPhotoPicker() {
+  if (kIsWeb) return;
+  final impl = ImagePickerPlatform.instance;
+  if (impl is ImagePickerAndroid) {
+    impl.useAndroidPhotoPicker = true;
+  }
 }
 
 void _installErrorHandlers() {
