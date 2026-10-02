@@ -32,7 +32,7 @@ App híbrido Android/iOS para registro de glicose, alimentação (texto, foto ou
 No SQL Editor do Supabase (ou `supabase db push` a partir desta pasta), execute as migrations na ordem:
 
 1. [`001_init.sql`](supabase/migrations/001_init.sql) … até
-2. [`019_libre_alert_same_sample.sql`](supabase/migrations/019_libre_alert_same_sample.sql)
+2. [`040_support_annual_mrr.sql`](supabase/migrations/040_support_annual_mrr.sql)
 
 Resumo das migrations recentes:
 
@@ -163,6 +163,22 @@ supabase secrets set REVENUECAT_WEBHOOK_AUTH='um-segredo-longo'
 supabase functions deploy revenuecat-webhook
 ```
 
+## Teste interno (Google Play)
+
+Pacote: `app.glicodose`. O release lê `android/key.properties` (keystore e senhas ficam fora do git). Sem esse arquivo, o AAB sai assinado com a chave de debug e o Play rejeita o envio.
+
+O número depois do `+` em `pubspec.yaml` (`version: 1.0.0+2`) é o código de versão. Cada upload precisa de um código maior que o anterior; o código **1** já foi usado. O nome que a pessoa vê no Play é o `1.0.0`.
+
+```bash
+flutter build appbundle --release --dart-define-from-file=.env
+```
+
+O arquivo sai em `build/app/outputs/bundle/release/app-release.aab`.
+
+No Play Console: **Testar e lançar → Teste → Teste interno → Criar nova versão**. O upload fica em **Pacotes de apps**, acima das notas. No formulário de **ID de publicidade** (**Monitorar e aprimorar → Política e programas → Conteúdo do app**), responda **Não**: o app não declara `AD_ID`.
+
+A faixa interna aceita até 100 testadores e não conta para os 12 inscritos nem para os 14 dias da produção. Roteiro e ficha: [`docs/play-closed-test.md`](docs/play-closed-test.md). Política: [`docs/play-privacy-policy.md`](docs/play-privacy-policy.md).
+
 ## Fluxo do usuário
 
 1. Cadastro / login (Supabase Auth)
@@ -195,10 +211,12 @@ lib/
   services/        # Auth, Entry, Insulin, IOB, Basal, Libre, Health, FCM, Export, Widget…
   screens/         # Dose, Histórico, Perfil, Health import, Linkar Sensor, Apoiar…
 supabase/
-  migrations/      # 001 … 019
+  migrations/      # 001 … 040
   functions/       # recommend-insulin, transcribe-food, describe-food, revenuecat-webhook, librelinkup-*
 docs/
   iap-store-setup.md
+  play-closed-test.md
+  play-privacy-policy.md
   releases/
 ```
 
