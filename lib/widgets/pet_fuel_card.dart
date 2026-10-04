@@ -87,6 +87,14 @@ class _PetFuelCardState extends State<PetFuelCard> {
     final hourLabel = hours < 10
         ? hours.toStringAsFixed(1)
         : hours.round().toString();
+    final moodLine =
+        playful ? computation.playfulLine : computation.quietLine;
+    final goal = PetGamification.nextGoal(computation, snapshot.mode);
+    final goalLine = goal == null
+        ? (playful ? 'Metas em dia' : 'Sem meta pendente')
+        : (goal.progressLabel != null
+            ? '${goal.title} · ${goal.progressLabel}'
+            : goal.title);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -128,6 +136,18 @@ class _PetFuelCardState extends State<PetFuelCard> {
                           color: colors.muted,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Text(
+                        moodLine,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.25,
+                          color: colors.ink,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
@@ -158,10 +178,20 @@ class _PetFuelCardState extends State<PetFuelCard> {
                             ? '${computation.dropsToday} gotas · $hourLabel h no alvo'
                             : '$hourLabel h no alvo',
                         style: TextStyle(
-                          fontSize: 13,
-                          height: 1.3,
+                          fontSize: 12,
+                          height: 1.25,
                           color: colors.ink,
                           fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        goalLine,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.25,
+                          color: colors.muted,
                         ),
                       ),
                     ],

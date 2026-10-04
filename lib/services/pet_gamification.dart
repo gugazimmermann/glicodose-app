@@ -27,21 +27,41 @@ String gamificationModeLabel(GamificationMode mode) {
 
 enum PetMood { sleeping, curious, celebrating, waiting }
 
+enum PetAchievementCategory { sensor, night, logs, wardrobe }
+
 class PetAchievement {
   const PetAchievement({
     required this.id,
+    required this.category,
     required this.playfulTitle,
     required this.quietTitle,
     required this.detail,
+    required this.hint,
   });
 
   final String id;
+  final PetAchievementCategory category;
   final String playfulTitle;
   final String quietTitle;
   final String detail;
+  final String hint;
 
   String titleFor(GamificationMode mode) =>
       mode == GamificationMode.pet ? playfulTitle : quietTitle;
+}
+
+class PetNextGoal {
+  const PetNextGoal({
+    required this.title,
+    required this.hint,
+    this.progress,
+    this.progressLabel,
+  });
+
+  final String title;
+  final String hint;
+  final double? progress;
+  final String? progressLabel;
 }
 
 class PetAccessory {
@@ -172,136 +192,273 @@ class PetGamification {
   static const achievements = <PetAchievement>[
     PetAchievement(
       id: 'straight_4',
-      playfulTitle: 'Primeiros passos da reta',
+      category: PetAchievementCategory.sensor,
+      playfulTitle: 'Primeiros passos na reta',
       quietTitle: '4 h no alvo',
       detail: '4 horas seguidas entre 70 e 180 mg/dL.',
+      hint: 'Fique 4 h seguidas na faixa 70–180.',
     ),
     PetAchievement(
       id: 'straight_12',
+      category: PetAchievementCategory.sensor,
       playfulTitle: 'Monarca da Linha Reta',
       quietTitle: '12 h no alvo',
       detail: '12 horas seguidas entre 70 e 180 mg/dL.',
+      hint: 'Segure 12 h seguidas na faixa.',
     ),
     PetAchievement(
       id: 'straight_24',
+      category: PetAchievementCategory.sensor,
       playfulTitle: 'Imperador do dia inteiro',
       quietTitle: '24 h no alvo',
       detail: '24 horas seguidas entre 70 e 180 mg/dL.',
+      hint: 'Um dia inteiro na faixa, sem sair da reta.',
     ),
     PetAchievement(
       id: 'night_guardian',
+      category: PetAchievementCategory.night,
       playfulTitle: 'Guardião da Noite',
       quietTitle: 'Noite no alvo',
       detail: 'Uma noite inteira, na janela do perfil, entre 70 e 180.',
+      hint: 'Durma a noite toda na faixa (janela do perfil).',
     ),
     PetAchievement(
       id: 'night_guardian_3',
+      category: PetAchievementCategory.night,
       playfulTitle: 'Três noites no colo',
       quietTitle: 'Três noites no alvo',
       detail: 'Três noites completas no alvo.',
+      hint: 'Três noites completas na faixa.',
     ),
     PetAchievement(
       id: 'dawn_watch',
+      category: PetAchievementCategory.night,
       playfulTitle: 'Madrugada mansa',
       quietTitle: '6 h na noite',
       detail: '6 horas seguidas dentro da janela da noite.',
+      hint: '6 h seguidas dentro da janela da noite.',
     ),
     PetAchievement(
       id: 'afternoon_calm',
+      category: PetAchievementCategory.sensor,
       playfulTitle: 'Tarde de brincadeira',
       quietTitle: 'Tarde no alvo',
       detail: '4 horas seguidas entre 12h e 18h.',
+      hint: '4 h seguidas na faixa entre 12h e 18h.',
     ),
     PetAchievement(
       id: 'first_log',
-      playfulTitle: 'Primeira Anotação',
+      category: PetAchievementCategory.logs,
+      playfulTitle: 'Primeira dose no caderno',
       quietTitle: 'Primeira dose anotada',
       detail: 'Uma dose aplicada registrada.',
+      hint: 'Anote uma dose aplicada.',
     ),
     PetAchievement(
       id: 'ten_logs',
-      playfulTitle: 'Caderno cheio',
+      category: PetAchievementCategory.logs,
+      playfulTitle: 'Caderno cheio de doses',
       quietTitle: 'Dez doses anotadas',
       detail: 'Dez doses aplicadas registradas.',
+      hint: 'Anote 10 doses aplicadas.',
     ),
     PetAchievement(
       id: 'breakfast_ritual',
-      playfulTitle: 'Ritual do café',
+      category: PetAchievementCategory.logs,
+      playfulTitle: 'Ritual do café da manhã',
       quietTitle: 'Manhã com dose e carbo',
       detail: 'Dose e carboidrato na mesma refeição da manhã.',
+      hint: 'De manhã, anote dose e carbo juntos.',
     ),
     PetAchievement(
       id: 'two_meals',
-      playfulTitle: 'Duas mesas',
+      category: PetAchievementCategory.logs,
+      playfulTitle: 'Duas mesas no dia',
       quietTitle: 'Dois carbos no dia',
       detail:
           'Dois carboidratos no mesmo dia, com pelo menos 3 h de intervalo.',
+      hint: 'Dois carbos no mesmo dia, com 3 h de intervalo.',
     ),
     PetAchievement(
       id: 'plate_and_pen',
+      category: PetAchievementCategory.logs,
       playfulTitle: 'Prato e caneta',
       quietTitle: 'Carbo e dose no dia',
       detail: 'Carboidrato e dose aplicada no mesmo dia.',
+      hint: 'No mesmo dia: um carbo e uma dose.',
     ),
     PetAchievement(
       id: 'logger_week',
+      category: PetAchievementCategory.logs,
       playfulTitle: 'Diário da semana',
       quietTitle: 'Doses em 4 dias',
       detail: 'Dose anotada em 4 dias diferentes, nos últimos 7.',
+      hint: 'Dose em 4 dias diferentes nos últimos 7.',
     ),
     PetAchievement(
       id: 'sensor_friend',
-      playfulTitle: 'Sensor amigo',
+      category: PetAchievementCategory.sensor,
+      playfulTitle: 'Sensor amigo de plantão',
       quietTitle: '24 h de leitura',
       detail: 'Leituras cobrindo 24 horas, sem um buraco grande.',
+      hint: 'Mantenha leituras por 24 h sem buraco grande.',
     ),
     PetAchievement(
       id: 'soft_week',
-      playfulTitle: 'Semana inteira',
+      category: PetAchievementCategory.sensor,
+      playfulTitle: 'Semana que cuida',
       quietTitle: '5 dias pela metade',
       detail: '5 dos últimos 7 dias com pelo menos metade do tempo no alvo.',
+      hint: '5 dos últimos 7 dias com metade do tempo na faixa.',
     ),
     PetAchievement(
       id: 'care_pause',
+      category: PetAchievementCategory.sensor,
       playfulTitle: 'Semana que respira',
       quietTitle: 'Sequência em pausa',
       detail: 'Dias de cuidado continuam depois de um dia que só pausou.',
+      hint: 'Volte a cuidar depois de um dia em pausa.',
     ),
     PetAchievement(
       id: 'hypo_care',
+      category: PetAchievementCategory.logs,
       playfulTitle: 'Cuidado na queda',
       quietTitle: 'Tratamento anotado',
       detail: 'Carboidrato registrado depois de uma leitura abaixo de 70.',
+      hint: 'Depois de <70, anote o carbo do tratamento.',
     ),
     PetAchievement(
       id: 'return_high',
-      playfulTitle: 'Volta mansa',
+      category: PetAchievementCategory.sensor,
+      playfulTitle: 'Volta mansa ao alvo',
       quietTitle: 'Voltou ao alvo',
       detail: 'Depois de uma leitura acima de 180, a seguinte voltou ao alvo.',
+      hint: 'Depois de >180, a próxima leitura na faixa.',
     ),
     PetAchievement(
       id: 'scarf',
-      playfulTitle: 'Lenço novo',
+      category: PetAchievementCategory.wardrobe,
+      playfulTitle: 'Lenço novinho',
       quietTitle: 'Primeiro acessório',
       detail: '3 gotas de combustível acumuladas.',
+      hint: 'Junte 3 gotas de combustível.',
     ),
     PetAchievement(
       id: 'glasses',
+      category: PetAchievementCategory.wardrobe,
       playfulTitle: 'Óculos de explorador',
       quietTitle: 'Segundo acessório',
       detail: '8 gotas de combustível acumuladas.',
+      hint: 'Junte 8 gotas de combustível.',
     ),
     PetAchievement(
       id: 'cape',
+      category: PetAchievementCategory.wardrobe,
       playfulTitle: 'Capinha de herói',
       quietTitle: 'Terceiro acessório',
       detail: '16 gotas de combustível acumuladas.',
+      hint: 'Junte 16 gotas de combustível.',
     ),
+  ];
+
+  /// Friendly unlock order when picking a locked achievement as next goal.
+  static const _goalAchievementOrder = <String>[
+    'straight_4',
+    'straight_12',
+    'straight_24',
+    'first_log',
+    'ten_logs',
+    'plate_and_pen',
+    'breakfast_ritual',
+    'two_meals',
+    'logger_week',
+    'night_guardian',
+    'dawn_watch',
+    'night_guardian_3',
+    'afternoon_calm',
+    'sensor_friend',
+    'soft_week',
+    'care_pause',
+    'hypo_care',
+    'return_high',
+    'scarf',
+    'glasses',
+    'cape',
   ];
 
   static PetAchievement? byId(String id) {
     for (final item in achievements) {
       if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  static String categoryLabel(
+    PetAchievementCategory category,
+    bool playful,
+  ) {
+    switch (category) {
+      case PetAchievementCategory.sensor:
+        return playful ? 'Na faixa' : 'Sensor';
+      case PetAchievementCategory.night:
+        return playful ? 'Noite' : 'Noite';
+      case PetAchievementCategory.logs:
+        return playful ? 'Caderno' : 'Anotações';
+      case PetAchievementCategory.wardrobe:
+        return playful ? 'Guarda-roupa' : 'Acessórios';
+    }
+  }
+
+  static PetAccessory? nextAccessory(int lifetimeDrops) {
+    for (final item in accessories) {
+      if (lifetimeDrops < item.dropsRequired) return item;
+    }
+    return null;
+  }
+
+  /// One clear goal: next accessory, today's bar, or a locked achievement.
+  static PetNextGoal? nextGoal(
+    PetComputation computation,
+    GamificationMode mode,
+  ) {
+    final playful = mode == GamificationMode.pet;
+    final accessory = nextAccessory(computation.lifetimeDrops);
+    if (accessory != null) {
+      final need = accessory.dropsRequired;
+      final have = computation.lifetimeDrops;
+      final name = playful ? accessory.name : accessory.quietName;
+      return PetNextGoal(
+        title: playful ? 'Desbloquear $name' : name,
+        hint: playful
+            ? 'Junte gotas na faixa para vestir o pet.'
+            : 'Acumule tempo no alvo para liberar.',
+        progress: (have / need).clamp(0, 1).toDouble(),
+        progressLabel: '$have/$need gotas',
+      );
+    }
+
+    if (computation.dropsToday < PetComputation.barDrops) {
+      final have = computation.dropsToday;
+      const need = PetComputation.barDrops;
+      return PetNextGoal(
+        title: playful ? 'Encher a barra de hoje' : '12 h no alvo hoje',
+        hint: playful
+            ? '1 gota ≈ 1 h na faixa · barra cheia em $need.'
+            : '1 hora na faixa enche 1 ponto da barra.',
+        progress: (have / need).clamp(0, 1).toDouble(),
+        progressLabel: playful ? '$have/$need gotas' : '$have/$need',
+      );
+    }
+
+    final owned = {for (final item in computation.unlocked) item.id};
+    for (final id in _goalAchievementOrder) {
+      if (owned.contains(id)) continue;
+      final item = byId(id);
+      if (item == null) continue;
+      return PetNextGoal(
+        title: item.titleFor(mode),
+        hint: item.hint,
+      );
     }
     return null;
   }

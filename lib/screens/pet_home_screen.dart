@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:diabetes_app/app.dart';
 import 'package:diabetes_app/models/profile.dart';
-import 'package:diabetes_app/services/app_time.dart';
 import 'package:diabetes_app/services/pet_gamification.dart';
 import 'package:diabetes_app/services/pet_progress_service.dart';
 import 'package:diabetes_app/theme/app_theme.dart';
@@ -23,22 +21,13 @@ class PetHomeScreen extends StatefulWidget {
 class _PetHomeScreenState extends State<PetHomeScreen> {
   Profile? _profile;
   PetSnapshot? _snapshot;
-  List<FamilyPet> _family = const [];
-  int _followers = 0;
   bool _loading = true;
   String? _error;
-  final _codeController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _codeController.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -60,21 +49,10 @@ class _PetHomeScreenState extends State<PetHomeScreen> {
         return;
       }
       final snapshot = await widget.services.pets.refresh(profile);
-      List<FamilyPet> family = const [];
-      var followers = 0;
-      try {
-        family = await widget.services.pets.listFamily();
-        followers = await widget.services.pets.followerCount();
-      } catch (error) {
-        if (!mounted) return;
-        setState(() => _error = userFacingError(error));
-      }
       if (!mounted) return;
       setState(() {
         _profile = profile;
         _snapshot = snapshot;
-        _family = family;
-        _followers = followers;
         _loading = false;
       });
     } catch (error) {
@@ -98,38 +76,13 @@ class _PetHomeScreenState extends State<PetHomeScreen> {
     }
   }
 
-  Future<void> _follow() async {
-    final code = _codeController.text.trim();
-    if (code.length != 6) {
-      setState(() => _error = 'O código tem 6 caracteres.');
-      return;
-    }
-    try {
-      await widget.services.pets.follow(code);
-      _codeController.clear();
-      await _load();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = userFacingError(error));
-    }
-  }
-
-  Future<void> _unfollow(FamilyPet pet) async {
-    try {
-      await widget.services.pets.unfollow(pet.ownerId);
-      await _load();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = userFacingError(error));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     final profile = _profile;
     final snapshot = _snapshot;
-    final playful = profile?.gamificationMode == GamificationMode.pet;
+    final mode = profile?.gamificationMode ?? GamificationMode.off;
+    final playful = mode == GamificationMode.pet;
     return Scaffold(
       appBar: AppBar(
         title: Text(playful ? 'Casa do pet' : 'Conquistas'),
@@ -142,6 +95,11 @@ class _PetHomeScreenState extends State<PetHomeScreen> {
                 if (snapshot != null) ...[
                   _Hero(snapshot: snapshot, playful: playful),
                   const SizedBox(height: 16),
+                  _NextGoalCard(
+                    goal: PetGamification.nextGoal(snapshot.computation, mode),
+                    playful: playful,
+                  ),
+                  const SizedBox(height: 16),
                   _Accessories(
                     computation: snapshot.computation,
                     playful: playful,
@@ -149,20 +107,10 @@ class _PetHomeScreenState extends State<PetHomeScreen> {
                   ),
                   const SizedBox(height: 16),
                   _Achievements(
-                    mode: profile!.gamificationMode,
-                    unlocked: snapshot.computation.unlocked,
+                    mode: mode,
+                    computation: snapshot.computation,
                   ),
-                  const SizedBox(height: 16),
                 ],
-                _FamilySection(
-                  shareCode: profile?.shareCode,
-                  followers: _followers,
-                  family: _family,
-                  playful: playful,
-                  codeController: _codeController,
-                  onFollow: _follow,
-                  onUnfollow: _unfollow,
-                ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!, style: const TextStyle(color: AppColors.error)),
@@ -194,19 +142,40 @@ class _Hero extends StatelessWidget {
     final hourLabel =
         hours < 10 ? hours.toStringAsFixed(1) : hours.round().toString();
     final streak = computation.streakPaused
-        ? 'Sequência em pausa: ${computation.careStreakDays} dias'
-        : 'Dias de cuidado: ${computation.careStreakDays}';
+        ? playful
+            ? 'Pausa — a sequência de ${computation.careStreakDays} dias segue guardada'
+            : 'Sequência em pausa: ${computation.careStreakDays} dias'
+        : playful
+            ? '${computation.careStreakDays} dias cuidando'
+            : 'Dias de cuidado: ${computation.careStreakDays}';
+    final next = PetGamification.nextAccessory(computation.lifetimeDrops);
+    final lifetimeLine = next == null
+        ? (playful
+            ? '${computation.lifetimeDrops} gotas na vida · guarda-roupa completo'
+            : '${computation.lifetimeDrops} gotas · acessórios liberados')
+        : (playful
+            ? '${computation.lifetimeDrops} gotas na vida · faltam ${next.dropsRequired - computation.lifetimeDrops} pro ${next.name}'
+            : '${computation.lifetimeDrops} gotas · faltam ${next.dropsRequired - computation.lifetimeDrops} para ${next.quietName}');
     return SectionCard(
       title: playful ? 'Seu pet' : 'Hoje',
       icon: Icons.pets,
       child: Column(
         children: [
-          PetMascot(
-            mood: computation.mood,
-            accessoryId: computation.equippedAccessoryId,
-            size: 160,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.primarySoft,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              child: PetMascot(
+                mood: computation.mood,
+                accessoryId: computation.equippedAccessoryId,
+                size: 160,
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
             playful ? computation.playfulLine : computation.quietLine,
             textAlign: TextAlign.center,
@@ -220,6 +189,14 @@ class _Hero extends StatelessWidget {
               style: TextStyle(fontSize: 13, color: colors.muted),
             ),
           ],
+          const SizedBox(height: 8),
+          Text(
+            playful
+                ? '1 gota ≈ 1 h na faixa · barra cheia em 12'
+                : '1 ponto ≈ 1 h na faixa · meta do dia: 12',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, height: 1.3, color: colors.muted),
+          ),
           const SizedBox(height: 12),
           TweenAnimationBuilder<double>(
             tween: Tween(
@@ -250,7 +227,76 @@ class _Hero extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w700, color: colors.ink),
           ),
           const SizedBox(height: 4),
+          Text(
+            lifetimeLine,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: colors.muted),
+          ),
+          const SizedBox(height: 4),
           Text(streak, style: TextStyle(fontSize: 12, color: colors.muted)),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextGoalCard extends StatelessWidget {
+  const _NextGoalCard({required this.goal, required this.playful});
+
+  final PetNextGoal? goal;
+  final bool playful;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final title = goal?.title ??
+        (playful ? 'Tudo em dia por aqui' : 'Sem meta pendente');
+    final hint = goal?.hint ??
+        (playful
+            ? 'O pet está feliz com o que você já conquistou.'
+            : 'Nenhuma meta em andamento no momento.');
+    return SectionCard(
+      title: playful ? 'Próxima meta' : 'Próximo passo',
+      icon: Icons.flag_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: colors.ink,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            hint,
+            style: TextStyle(fontSize: 13, height: 1.35, color: colors.muted),
+          ),
+          if (goal?.progress != null) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: goal!.progress!.clamp(0, 1),
+                minHeight: 10,
+                backgroundColor: colors.primarySoft,
+                color: AppColors.primary,
+              ),
+            ),
+            if (goal.progressLabel != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                goal.progressLabel!,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: colors.ink,
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -289,8 +335,8 @@ class _Accessories extends StatelessWidget {
               Chip(
                 label: Text(
                   playful
-                      ? '${item.name} · ${item.dropsRequired} gotas'
-                      : '${item.quietName} · ${item.dropsRequired}',
+                      ? '${item.name} · faltam ${item.dropsRequired - computation.lifetimeDrops} gotas'
+                      : '${item.quietName} · faltam ${item.dropsRequired - computation.lifetimeDrops}',
                 ),
                 backgroundColor: colors.surface,
               ),
@@ -301,192 +347,98 @@ class _Accessories extends StatelessWidget {
 }
 
 class _Achievements extends StatelessWidget {
-  const _Achievements({required this.mode, required this.unlocked});
+  const _Achievements({required this.mode, required this.computation});
 
   final GamificationMode mode;
-  final List<PetAchievement> unlocked;
+  final PetComputation computation;
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    final owned = unlocked.map((item) => item.id).toSet();
+    final playful = mode == GamificationMode.pet;
+    final owned = computation.unlocked.map((item) => item.id).toSet();
+    final newly = computation.newlyUnlocked;
+    final categories = PetAchievementCategory.values;
     return SectionCard(
       title: 'Conquistas',
       icon: Icons.emoji_events_outlined,
       child: Column(
-        children: [
-          for (final item in PetGamification.achievements)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                owned.contains(item.id)
-                    ? Icons.verified
-                    : Icons.radio_button_unchecked,
-                color: owned.contains(item.id)
-                    ? AppColors.success
-                    : colors.hint,
-              ),
-              title: Text(item.titleFor(mode)),
-              subtitle: Text(item.detail),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FamilySection extends StatelessWidget {
-  const _FamilySection({
-    required this.shareCode,
-    required this.followers,
-    required this.family,
-    required this.playful,
-    required this.codeController,
-    required this.onFollow,
-    required this.onUnfollow,
-  });
-
-  final String? shareCode;
-  final int followers;
-  final List<FamilyPet> family;
-  final bool playful;
-  final TextEditingController codeController;
-  final VoidCallback onFollow;
-  final ValueChanged<FamilyPet> onUnfollow;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = AppColors.of(context);
-    return SectionCard(
-      title: playful ? 'Família' : 'Quem acompanha',
-      icon: Icons.group_outlined,
-      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Quem tiver o código vê o pet, as gotas e as conquistas. Não vê glicose nem doses.',
-            style: TextStyle(fontSize: 13, height: 1.35, color: colors.muted),
-          ),
-          if (shareCode != null) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Text(
-                  shareCode!,
+          if (newly.isNotEmpty) ...[
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.primarySoft,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Text(
+                  newly.length == 1
+                      ? (playful
+                          ? 'Nova conquista: ${newly.first.titleFor(mode)}'
+                          : 'Nova: ${newly.first.titleFor(mode)}')
+                      : (playful
+                          ? '${newly.length} conquistas novas desbloqueadas'
+                          : '${newly.length} novas conquistas'),
                   style: TextStyle(
-                    fontSize: 20,
-                    letterSpacing: 2,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                     color: colors.ink,
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Copiar código',
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: shareCode!));
-                  },
-                  icon: const Icon(Icons.copy, size: 18),
-                ),
-              ],
+              ),
             ),
-            Text(
-              followers == 1
-                  ? '1 pessoa acompanha o pet.'
-                  : '$followers pessoas acompanham o pet.',
-              style: TextStyle(fontSize: 12, color: colors.muted),
-            ),
-          ],
-          const SizedBox(height: 12),
-          TextField(
-            controller: codeController,
-            textCapitalization: TextCapitalization.characters,
-            maxLength: 6,
-            decoration: const InputDecoration(
-              labelText: 'Código de outro pet',
-              counterText: '',
-            ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: onFollow,
-            child: const Text('Acompanhar'),
-          ),
-          for (final pet in family) ...[
             const SizedBox(height: 12),
-            _FamilyPetTile(
-              pet: pet,
-              playful: playful,
-              onUnfollow: () => onUnfollow(pet),
+          ],
+          for (final category in categories) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 4),
+              child: Text(
+                PetGamification.categoryLabel(category, playful),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
+                  color: colors.muted,
+                ),
+              ),
             ),
+            for (final item in _sortedForCategory(category, owned))
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: Icon(
+                  owned.contains(item.id)
+                      ? Icons.verified
+                      : Icons.radio_button_unchecked,
+                  color: owned.contains(item.id)
+                      ? AppColors.success
+                      : colors.hint,
+                ),
+                title: Text(item.titleFor(mode)),
+                subtitle: Text(item.hint),
+              ),
           ],
         ],
       ),
     );
   }
-}
 
-String _familyFuelLine(FamilyPet pet, bool playful) {
-  final now = AppTime.now();
-  final day = pet.fuelDay;
-  final isToday = day != null &&
-      day.year == now.year &&
-      day.month == now.month &&
-      day.day == now.day;
-  final suffix = isToday ? ' hoje' : '';
-  if (playful) return '${pet.dropsToday} gotas$suffix';
-  return '${pet.hoursInRangeToday.toStringAsFixed(1)} h no alvo$suffix';
-}
-
-class _FamilyPetTile extends StatelessWidget {
-  const _FamilyPetTile({
-    required this.pet,
-    required this.playful,
-    required this.onUnfollow,
-  });
-
-  final FamilyPet pet;
-  final bool playful;
-  final VoidCallback onUnfollow;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = AppColors.of(context);
-    final name = (pet.displayName ?? '').trim();
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        PetMascot(
-          mood: pet.mood,
-          accessoryId: pet.equippedAccessoryId,
-          size: 64,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name.isEmpty ? 'Pet da família' : name,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                playful ? pet.playfulLine : pet.quietLine,
-                style: TextStyle(fontSize: 13, color: colors.ink, height: 1.3),
-              ),
-              Text(
-                _familyFuelLine(pet, playful),
-                style: TextStyle(fontSize: 12, color: colors.muted),
-              ),
-            ],
-          ),
-        ),
-        IconButton(
-          tooltip: 'Deixar de acompanhar',
-          onPressed: onUnfollow,
-          icon: const Icon(Icons.close),
-        ),
-      ],
-    );
+  List<PetAchievement> _sortedForCategory(
+    PetAchievementCategory category,
+    Set<String> owned,
+  ) {
+    final items = [
+      for (final item in PetGamification.achievements)
+        if (item.category == category) item,
+    ];
+    items.sort((a, b) {
+      final aOwned = owned.contains(a.id);
+      final bOwned = owned.contains(b.id);
+      if (aOwned == bOwned) return 0;
+      return aOwned ? -1 : 1;
+    });
+    return items;
   }
 }

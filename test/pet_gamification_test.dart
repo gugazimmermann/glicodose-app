@@ -273,4 +273,82 @@ void main() {
       expect(ids(result), contains('dawn_watch'));
     });
   });
+
+  group('nextGoal', () {
+    PetComputation snapshot({
+      int dropsToday = 0,
+      int lifetimeDrops = 0,
+      List<String> unlockedIds = const [],
+    }) {
+      return PetComputation(
+        mood: PetMood.curious,
+        playfulLine: 'ok',
+        quietLine: 'ok',
+        suggestion: null,
+        dropsToday: dropsToday,
+        hoursInRangeToday: dropsToday.toDouble(),
+        lifetimeDrops: lifetimeDrops,
+        careStreakDays: 0,
+        streakPaused: false,
+        streakCursor: null,
+        unlocked: [
+          for (final id in unlockedIds)
+            PetGamification.byId(id) ??
+                PetAchievement(
+                  id: id,
+                  category: PetAchievementCategory.sensor,
+                  playfulTitle: id,
+                  quietTitle: id,
+                  detail: id,
+                  hint: id,
+                ),
+        ],
+        newlyUnlocked: const [],
+        equippedAccessoryId: null,
+        shouldNotify: false,
+        accountedDay: DateTime(2026, 9, 28),
+        dropsOnAccountedDay: dropsToday,
+      );
+    }
+
+    test('prefers the next locked accessory with drop progress', () {
+      final goal = PetGamification.nextGoal(
+        snapshot(lifetimeDrops: 5, dropsToday: 2),
+        GamificationMode.pet,
+      );
+
+      expect(goal, isNotNull);
+      expect(goal!.title, contains('Óculos'));
+      expect(goal.progressLabel, '5/8 gotas');
+      expect(goal.progress, closeTo(5 / 8, 0.001));
+    });
+
+    test('falls back to today bar when wardrobe is complete', () {
+      final goal = PetGamification.nextGoal(
+        snapshot(lifetimeDrops: 20, dropsToday: 4),
+        GamificationMode.quiet,
+      );
+
+      expect(goal, isNotNull);
+      expect(goal!.title, '12 h no alvo hoje');
+      expect(goal.progressLabel, '4/12');
+    });
+
+    test('picks a locked achievement when accessory and bar are done', () {
+      final wardrobe = ['scarf', 'glasses', 'cape'];
+      final goal = PetGamification.nextGoal(
+        snapshot(
+          lifetimeDrops: 20,
+          dropsToday: 12,
+          unlockedIds: wardrobe,
+        ),
+        GamificationMode.pet,
+      );
+
+      expect(goal, isNotNull);
+      expect(goal!.title, 'Primeiros passos na reta');
+      expect(goal.hint, contains('4 h'));
+      expect(goal.progress, isNull);
+    });
+  });
 }

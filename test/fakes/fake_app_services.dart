@@ -754,18 +754,4 @@ class FakePetProgressService extends PetProgressService {
 
   @override
   Future<void> equip(Profile profile, String? accessoryId) async {}
-
-  @override
-  Future<int> followerCount() async => 0;
-
-  @override
-  Future<List<FamilyPet>> listFamily() async => const [];
-
-  @override
-  Future<FamilyPet> follow(String code) async {
-    throw Exception('Código indisponível neste teste.');
-  }
-
-  @override
-  Future<void> unfollow(String ownerId) async {}
 }

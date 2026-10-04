@@ -31,43 +31,8 @@ class PetSnapshot {
       : computation.quietLine;
 }
 
-class FamilyPet {
-  const FamilyPet({
-    required this.ownerId,
-    required this.displayName,
-    required this.mood,
-    required this.playfulLine,
-    required this.quietLine,
-    required this.suggestion,
-    required this.dropsToday,
-    required this.hoursInRangeToday,
-    required this.lifetimeDrops,
-    required this.careStreakDays,
-    required this.streakPaused,
-    required this.unlockedIds,
-    required this.equippedAccessoryId,
-    this.fuelDay,
-  });
-
-  final String ownerId;
-  final String? displayName;
-  final PetMood mood;
-  final String playfulLine;
-  final String quietLine;
-  final String? suggestion;
-  final int dropsToday;
-  final double hoursInRangeToday;
-  final int lifetimeDrops;
-  final int careStreakDays;
-  final bool streakPaused;
-  final List<String> unlockedIds;
-  final String? equippedAccessoryId;
-  final DateTime? fuelDay;
-}
-
 /// Computes the pet from readings and doses, then stores the snapshot so
-/// another phone and the family see the same progress. Family reads only
-/// this snapshot, never glucose rows.
+/// another phone sees the same progress.
 class PetProgressService {
   PetProgressService(
     this._client, {
@@ -186,83 +151,6 @@ class PetProgressService {
       'display_name': profile.fullName,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     });
-  }
-
-  Future<int> followerCount() async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return 0;
-    final rows = await _client
-        .from('pet_family_links')
-        .select('viewer_id')
-        .eq('owner_id', userId);
-    return (rows as List).length;
-  }
-
-  Future<List<FamilyPet>> listFamily() async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return const [];
-    final links = await _client
-        .from('pet_family_links')
-        .select('owner_id')
-        .eq('viewer_id', userId);
-    final ids = [
-      for (final raw in links as List) (raw as Map)['owner_id'] as String,
-    ];
-    if (ids.isEmpty) return const [];
-    final rows = await _client
-        .from('pet_progress')
-        .select()
-        .inFilter('user_id', ids);
-    return [
-      for (final raw in rows as List)
-        _familyFromJson(Map<String, dynamic>.from(raw as Map)),
-    ];
-  }
-
-  Future<FamilyPet> follow(String code) async {
-    final raw = await _client.rpc(
-      'follow_family_pet',
-      params: {'p_code': code.trim().toUpperCase()},
-    );
-    Map<String, dynamic>? row;
-    if (raw is List && raw.isNotEmpty) {
-      row = Map<String, dynamic>.from(raw.first as Map);
-    } else if (raw is Map) {
-      row = Map<String, dynamic>.from(raw);
-    }
-    final ownerId = row?['owner_id'] as String?;
-    if (ownerId == null) {
-      throw Exception('Não encontrei esse código.');
-    }
-    final pets = await listFamily();
-    for (final pet in pets) {
-      if (pet.ownerId == ownerId) return pet;
-    }
-    return FamilyPet(
-      ownerId: ownerId,
-      displayName: row?['display_name'] as String?,
-      mood: PetMood.sleeping,
-      playfulLine: 'Ainda sem um momento gravado.',
-      quietLine: 'Ainda sem um momento gravado.',
-      suggestion: null,
-      dropsToday: 0,
-      hoursInRangeToday: 0,
-      lifetimeDrops: 0,
-      careStreakDays: 0,
-      streakPaused: false,
-      unlockedIds: const [],
-      equippedAccessoryId: null,
-    );
-  }
-
-  Future<void> unfollow(String ownerId) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return;
-    await _client
-        .from('pet_family_links')
-        .delete()
-        .eq('viewer_id', userId)
-        .eq('owner_id', ownerId);
   }
 
   Future<({PetStoredState stored, bool failed})> _loadStored(
@@ -410,30 +298,6 @@ class PetProgressService {
       unlockedIds: _ids(json['unlocked_ids']),
       equippedAccessoryId: json['equipped_accessory'] as String?,
       lastNoticeOn: _parseDate(json['last_notice_on']),
-    );
-  }
-
-  FamilyPet _familyFromJson(Map<String, dynamic> json) {
-    final moodName = json['mood'] as String?;
-    return FamilyPet(
-      ownerId: json['user_id'] as String,
-      displayName: json['display_name'] as String?,
-      mood: PetMood.values.firstWhere(
-        (mood) => mood.name == moodName,
-        orElse: () => PetMood.sleeping,
-      ),
-      playfulLine: (json['playful_line'] as String?) ?? '',
-      quietLine: (json['quiet_line'] as String?) ?? '',
-      suggestion: json['suggestion'] as String?,
-      dropsToday: (json['fuel_drops_today'] as num?)?.toInt() ?? 0,
-      hoursInRangeToday:
-          (json['hours_in_range_today'] as num?)?.toDouble() ?? 0,
-      lifetimeDrops: (json['lifetime_drops'] as num?)?.toInt() ?? 0,
-      careStreakDays: (json['care_streak_days'] as num?)?.toInt() ?? 0,
-      streakPaused: json['streak_paused'] == true,
-      unlockedIds: _ids(json['unlocked_ids']).toList(),
-      equippedAccessoryId: json['equipped_accessory'] as String?,
-      fuelDay: _parseDate(json['fuel_day']),
     );
   }
 
