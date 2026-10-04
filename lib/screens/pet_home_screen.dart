@@ -285,10 +285,10 @@ class _NextGoalCard extends StatelessWidget {
                 color: AppColors.primary,
               ),
             ),
-            if (goal.progressLabel != null) ...[
+            if (goal?.progressLabel != null) ...[
               const SizedBox(height: 6),
               Text(
-                goal.progressLabel!,
+                goal!.progressLabel!,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
