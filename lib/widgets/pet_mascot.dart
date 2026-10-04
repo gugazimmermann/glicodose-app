@@ -148,6 +148,12 @@ class _PetPainter extends CustomPainter {
       _paintGlasses(canvas, center, radius);
     } else if (accessoryId == 'cape') {
       _paintCape(canvas, center, radius, behind: false);
+    } else if (accessoryId == 'hat') {
+      _paintHat(canvas, center, radius);
+    } else if (accessoryId == 'bow') {
+      _paintBow(canvas, center, radius);
+    } else if (accessoryId == 'headphones') {
+      _paintHeadphones(canvas, center, radius);
     }
 
     if (mood == PetMood.celebrating) {
@@ -468,6 +474,172 @@ class _PetPainter extends CustomPainter {
       ..close();
     canvas.drawPath(path, fill);
     canvas.drawPath(path, stroke);
+  }
+
+  void _paintHat(Canvas canvas, Offset center, double radius) {
+    final fill = Paint()..color = const Color(0xFF5B3A29);
+    final brimFill = Paint()..color = const Color(0xFF7A4E35);
+    final stroke = Paint()
+      ..color = const Color(0xFF3A2418)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.0, radius * 0.04);
+    final band = Paint()..color = accent;
+
+    final crownTop = center.translate(0, -radius * 1.05);
+    final crown = Path()
+      ..moveTo(center.dx - radius * 0.42, center.dy - radius * 0.72)
+      ..quadraticBezierTo(
+        center.dx - radius * 0.5,
+        crownTop.dy,
+        center.dx,
+        crownTop.dy - radius * 0.08,
+      )
+      ..quadraticBezierTo(
+        center.dx + radius * 0.5,
+        crownTop.dy,
+        center.dx + radius * 0.42,
+        center.dy - radius * 0.72,
+      )
+      ..close();
+    canvas.drawPath(crown, fill);
+    canvas.drawPath(crown, stroke);
+
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: center.translate(0, -radius * 0.7),
+        width: radius * 1.35,
+        height: radius * 0.28,
+      ),
+      brimFill,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: center.translate(0, -radius * 0.7),
+        width: radius * 1.35,
+        height: radius * 0.28,
+      ),
+      stroke,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: center.translate(0, -radius * 0.78),
+          width: radius * 0.9,
+          height: radius * 0.12,
+        ),
+        Radius.circular(radius * 0.06),
+      ),
+      band,
+    );
+  }
+
+  void _paintBow(Canvas canvas, Offset center, double radius) {
+    final fill = Paint()..color = const Color(0xFFE85D8A);
+    final stroke = Paint()
+      ..color = const Color(0xFFB83D66)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.0, radius * 0.04);
+    final knot = Paint()..color = const Color(0xFFC94A74);
+    final origin = center.translate(-radius * 0.78, -radius * 0.72);
+
+    final left = Path()
+      ..moveTo(origin.dx, origin.dy)
+      ..quadraticBezierTo(
+        origin.dx - radius * 0.38,
+        origin.dy - radius * 0.22,
+        origin.dx - radius * 0.42,
+        origin.dy + radius * 0.02,
+      )
+      ..quadraticBezierTo(
+        origin.dx - radius * 0.36,
+        origin.dy + radius * 0.28,
+        origin.dx,
+        origin.dy,
+      )
+      ..close();
+    final right = Path()
+      ..moveTo(origin.dx, origin.dy)
+      ..quadraticBezierTo(
+        origin.dx + radius * 0.38,
+        origin.dy - radius * 0.22,
+        origin.dx + radius * 0.42,
+        origin.dy + radius * 0.02,
+      )
+      ..quadraticBezierTo(
+        origin.dx + radius * 0.36,
+        origin.dy + radius * 0.28,
+        origin.dx,
+        origin.dy,
+      )
+      ..close();
+    canvas.drawPath(left, fill);
+    canvas.drawPath(right, fill);
+    canvas.drawPath(left, stroke);
+    canvas.drawPath(right, stroke);
+    canvas.drawCircle(origin, radius * 0.1, knot);
+    canvas.drawCircle(origin, radius * 0.1, stroke);
+  }
+
+  void _paintHeadphones(Canvas canvas, Offset center, double radius) {
+    final band = Paint()
+      ..color = const Color(0xFF2D3340)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(2.4, radius * 0.1)
+      ..strokeCap = StrokeCap.round;
+    final cup = Paint()..color = accent;
+    final cupStroke = Paint()
+      ..color = Color.lerp(accent, Colors.black, 0.2)!
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.0, radius * 0.04);
+    final pad = Paint()..color = Color.lerp(accent, Colors.white, 0.35)!;
+
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: center.translate(0, -radius * 0.35),
+        width: radius * 1.7,
+        height: radius * 1.35,
+      ),
+      math.pi * 1.12,
+      math.pi * 0.76,
+      false,
+      band,
+    );
+
+    final left = center.translate(-radius * 0.82, -radius * 0.12);
+    final right = center.translate(radius * 0.82, -radius * 0.12);
+    for (final ear in [left, right]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: ear,
+            width: radius * 0.34,
+            height: radius * 0.48,
+          ),
+          Radius.circular(radius * 0.14),
+        ),
+        cup,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: ear,
+            width: radius * 0.34,
+            height: radius * 0.48,
+          ),
+          Radius.circular(radius * 0.14),
+        ),
+        cupStroke,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: ear.translate(ear == left ? radius * 0.04 : -radius * 0.04, 0),
+          width: radius * 0.16,
+          height: radius * 0.3,
+        ),
+        pad,
+      );
+    }
   }
 
   void _paintSparkles(Canvas canvas, Offset center, double radius) {

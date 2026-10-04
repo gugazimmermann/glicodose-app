@@ -325,7 +325,7 @@ void main() {
 
     test('falls back to today bar when wardrobe is complete', () {
       final goal = PetGamification.nextGoal(
-        snapshot(lifetimeDrops: 20, dropsToday: 4),
+        snapshot(lifetimeDrops: 64, dropsToday: 4),
         GamificationMode.quiet,
       );
 
@@ -335,10 +335,17 @@ void main() {
     });
 
     test('picks a locked achievement when accessory and bar are done', () {
-      final wardrobe = ['scarf', 'glasses', 'cape'];
+      final wardrobe = [
+        'scarf',
+        'glasses',
+        'cape',
+        'hat',
+        'bow',
+        'headphones',
+      ];
       final goal = PetGamification.nextGoal(
         snapshot(
-          lifetimeDrops: 20,
+          lifetimeDrops: 64,
           dropsToday: 12,
           unlockedIds: wardrobe,
         ),

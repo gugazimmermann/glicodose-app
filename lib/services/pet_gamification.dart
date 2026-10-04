@@ -187,6 +187,24 @@ class PetGamification {
       quietName: 'Capinha',
       dropsRequired: 16,
     ),
+    PetAccessory(
+      id: 'hat',
+      name: 'Chapéu aventureiro',
+      quietName: 'Chapéu',
+      dropsRequired: 28,
+    ),
+    PetAccessory(
+      id: 'bow',
+      name: 'Laço na orelha',
+      quietName: 'Laço',
+      dropsRequired: 44,
+    ),
+    PetAccessory(
+      id: 'headphones',
+      name: 'Fones coloridos',
+      quietName: 'Fones',
+      dropsRequired: 64,
+    ),
   ];
 
   static const achievements = <PetAchievement>[
@@ -359,6 +377,30 @@ class PetGamification {
       detail: '16 gotas de combustível acumuladas.',
       hint: 'Junte 16 gotas de combustível.',
     ),
+    PetAchievement(
+      id: 'hat',
+      category: PetAchievementCategory.wardrobe,
+      playfulTitle: 'Chapéu aventureiro',
+      quietTitle: 'Quarto acessório',
+      detail: '28 gotas de combustível acumuladas.',
+      hint: 'Junte 28 gotas de combustível.',
+    ),
+    PetAchievement(
+      id: 'bow',
+      category: PetAchievementCategory.wardrobe,
+      playfulTitle: 'Laço na orelha',
+      quietTitle: 'Quinto acessório',
+      detail: '44 gotas de combustível acumuladas.',
+      hint: 'Junte 44 gotas de combustível.',
+    ),
+    PetAchievement(
+      id: 'headphones',
+      category: PetAchievementCategory.wardrobe,
+      playfulTitle: 'Fones coloridos',
+      quietTitle: 'Sexto acessório',
+      detail: '64 gotas de combustível acumuladas.',
+      hint: 'Junte 64 gotas de combustível.',
+    ),
   ];
 
   /// Friendly unlock order when picking a locked achievement as next goal.
@@ -384,6 +426,9 @@ class PetGamification {
     'scarf',
     'glasses',
     'cape',
+    'hat',
+    'bow',
+    'headphones',
   ];
 
   static PetAchievement? byId(String id) {
